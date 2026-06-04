@@ -25,7 +25,7 @@ namespace Glitnir.Ranking
     {
         public const string ModGuid = "com.glitnir.ranking";
         public const string ModName = "Glitnir Ranking";
-        public const string ModVersion = "0.7.67";
+        public const string ModVersion = "0.7.68";
 
         internal static GlitnirRankingPlugin Instance;
         internal static ManualLogSource Log;
@@ -1250,6 +1250,17 @@ namespace Glitnir.Ranking
 
         private void EnsureUiTexturesLoaded()
         {
+            if (_uiWhiteTexture == null)
+                _uiWhiteTexture = CreateSolidTexture(Color.white);
+
+            if (_uiTransparentTexture == null)
+                _uiTransparentTexture = CreateSolidTexture(new Color(0f, 0f, 0f, 0f));
+
+            if (_uiPanelTexture == null)
+                _uiPanelTexture = CreateSolidTexture(new Color(0.075f, 0.045f, 0.018f, 0.92f));
+
+            if (_uiBackgroundTexture == null)
+                _uiBackgroundTexture = CreateSolidTexture(new Color(0.018f, 0.015f, 0.012f, 0.96f));
         }
 
         private void LoadRuleCategoryIcons()

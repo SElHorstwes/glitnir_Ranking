@@ -184,6 +184,21 @@ namespace Glitnir.Ranking
 
         private void OnGUI()
         {
+            if (Application.isBatchMode)
+                return;
+
+            EnsureUiTexturesLoaded();
+            EnsureGuiStyles();
+            ClampRankingWindowRect();
+
+            DrawRankingIcon();
+
+            if (!_hudVisible)
+                return;
+
+            UpdateRankingInputBlockerRect();
+            _windowRect = GUI.Window(349667, _windowRect, DrawRankingWindow, GUIContent.none, _windowStyle);
+            ClampRankingWindowRect();
         }
 
 
