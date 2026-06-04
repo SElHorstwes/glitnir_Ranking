@@ -191,6 +191,12 @@ namespace Glitnir.Ranking
             EnsureGuiStyles();
             ClampRankingWindowRect();
 
+            if (TryShowUnityRankingHud())
+            {
+                TickUnityRankingHud();
+                return;
+            }
+
             DrawRankingIcon();
 
             if (!_hudVisible)
