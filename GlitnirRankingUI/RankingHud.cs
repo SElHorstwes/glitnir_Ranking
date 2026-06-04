@@ -343,6 +343,9 @@ namespace Glitnir.Ranking
 
         private void ToggleRankingHud()
         {
+            if (TryToggleInventoryRanking())
+                return;
+
             if (_hudVisible)
             {
                 CloseRankingHudAndCollapseAll();

@@ -43,6 +43,7 @@
     <Compile Include="Core\RankingRuntime.cs" />
     <Compile Include="Core\RankingSeasonManager.cs" />
     <Compile Include="Glitnir Ranking.cs" />
+    <Compile Include="GlitnirRankingUI\RankingInventoryGui.cs" />
     <Compile Include="GlitnirRankingUI\RankingHud.cs" />
     <Compile Include="GlitnirRankingUI\RankingHudUnity.cs" />
     <Compile Include="GlitnirRankingUI\RankingHudUnityRuntime.cs" />
