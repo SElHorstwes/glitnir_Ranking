@@ -13,8 +13,7 @@
     <FileAlignment>512</FileAlignment>
     <Deterministic>true</Deterministic>
     <TargetFrameworkProfile />
-    <NuGetPackageImportStamp>
-    </NuGetPackageImportStamp>
+    <NuGetPackageImportStamp></NuGetPackageImportStamp>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -49,12 +48,13 @@
     <Compile Include="GlitnirRankingUI\RankingNotifications.cs" />
     <Compile Include="Networking\RankingRewardRpc.cs" />
     <Compile Include="Networking\RankingSnapshotRpc.cs" />
-    <Compile Include="Patches\Glitnir_AAA_CraftMaterialFix.cs" />
+    <Compile Include="Patches\GlitnirAAACraftMaxClamp.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
     <Compile Include="Tracking\RankingCraftTracking.cs" />
     <Compile Include="Tracking\RankingFarmTracking.cs" />
     <Compile Include="Tracking\RankingFishingTracking.cs" />
     <Compile Include="Tracking\RankingKillTracking.cs" />
+    <Compile Include="Core\RankingDatabaseCache.cs" />
   </ItemGroup>
   <ItemGroup>
     <Reference Include="0Harmony, Version=2.9.0.0, Culture=neutral, processorArchitecture=MSIL">
@@ -140,37 +140,37 @@
     <EmbeddedResource Include="GlitnirRankingUI\icons\rank_3.png" />
     <EmbeddedResource Include="GlitnirRankingUI\title_oraculo_ranking_transparent.png.png" />
     <EmbeddedResource Include="GlitnirRankingUI\icons\0 (1).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2810%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2811%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2812%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2813%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2814%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2815%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2816%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2817%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2818%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2819%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %282%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2820%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2821%29.png" />
-    <Content Include="GlitnirRankingUI\icons\0 %2822%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2823%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2824%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2825%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2826%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2827%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2828%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2829%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %283%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2830%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2831%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %2832%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %284%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %285%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %286%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %287%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %288%29.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 %289%29.png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (10).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (11).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (12).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (13).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (14).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (15).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (16).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (17).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (18).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (19).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (2).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (20).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (21).png" />
+    <Content Include="GlitnirRankingUI\icons\0 (22).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (23).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (24).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (25).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (26).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (27).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (28).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (29).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (3).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (30).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (31).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (32).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (4).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (5).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (6).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (7).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (8).png" />
+    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (9).png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -179,22 +179,29 @@
   <Import Project="packages\ILRepack.Lib.MSBuild.Task.2.0.18\build\ILRepack.Lib.MSBuild.Task.targets" Condition="Exists('packages\ILRepack.Lib.MSBuild.Task.2.0.18\build\ILRepack.Lib.MSBuild.Task.targets')" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
-      <ErrorText>Este projeto faz referência a pacotes do NuGet que não estão presentes neste computador. Use a Restauração de Pacotes do NuGet para baixá-los.  Para obter mais informações, consulte http://go.microsoft.com/fwlink/?LinkID=322105. O arquivo ausente é {0}.</ErrorText>
+      <ErrorText>Este projeto faz referÃƒÂªncia a pacotes do NuGet que nÃƒÂ£o estÃƒÂ£o presentes neste computador. Use a RestauraÃƒÂ§ÃƒÂ£o de Pacotes do NuGet para baixÃƒÂ¡-los.  Para obter mais informaÃƒÂ§ÃƒÂµes, consulte http://go.microsoft.com/fwlink/?LinkID=322105. O arquivo ausente ÃƒÂ© {0}.</ErrorText>
     </PropertyGroup>
     <Error Condition="!Exists('packages\ILRepack.Lib.MSBuild.Task.2.0.18\build\ILRepack.Lib.MSBuild.Task.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\ILRepack.Lib.MSBuild.Task.2.0.18\build\ILRepack.Lib.MSBuild.Task.targets'))" />
   </Target>
   <ItemGroup>
     <Reference Include="System.Buffers">
-      <HintPath>packages\System.Buffers.4.5.1\lib\net461\System.Buffers.dll</HintPath>
+      <HintPath>Dependencies\System.Buffers.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>
   <ItemGroup>
     <Reference Include="System.Memory">
-      <HintPath>packages\System.Memory.4.5.5\lib\net461\System.Memory.dll</HintPath>
+      <HintPath>Dependencies\System.Memory.dll</HintPath>
       <Private>true</Private>
     </Reference>
   </ItemGroup>
+  <ItemGroup>
+    <Reference Include="System.Runtime.CompilerServices.Unsafe">
+      <HintPath>Dependencies\System.Runtime.CompilerServices.Unsafe.dll</HintPath>
+      <Private>true</Private>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup />
   <PropertyGroup>
     <ILRepackOutputFile>$(TargetDir)GlitnirRanking.Merged.dll</ILRepackOutputFile>
   </PropertyGroup>
@@ -208,12 +215,7 @@
       <InputAssemblies Include="$(TargetDir)System.Runtime.CompilerServices.Unsafe.dll" Condition="Exists('$(TargetDir)System.Runtime.CompilerServices.Unsafe.dll')" />
       <ILRepackLibraryPath Include="$(TargetDir)" />
       <ILRepackLibraryPath Include="$(ProjectDir)" />
-      <ILRepackLibraryPath Include="$(ProjectDir)packages\System.Buffers.4.5.1\lib\net461" />
-      <ILRepackLibraryPath Include="$(ProjectDir)packages\System.Memory.4.5.5\lib\net461" />
-      <ILRepackLibraryPath Include="$(ProjectDir)packages\System.Runtime.CompilerServices.Unsafe.6.0.0\lib\net461" />
-      <ILRepackLibraryPath Include="$(ProjectDir)..\packages\System.Buffers.4.5.1\lib\net461" />
-      <ILRepackLibraryPath Include="$(ProjectDir)..\packages\System.Memory.4.5.5\lib\net461" />
-      <ILRepackLibraryPath Include="$(ProjectDir)..\packages\System.Runtime.CompilerServices.Unsafe.6.0.0\lib\net461" />
+      <ILRepackLibraryPath Include="$(ProjectDir)Dependencies" />
     </ItemGroup>
     <ILRepack Parallel="true" Internalize="true" InputAssemblies="@(InputAssemblies)" LibraryPath="@(ILRepackLibraryPath)" OutputFile="$(ILRepackOutputFile)" TargetKind="Dll" />
   </Target>

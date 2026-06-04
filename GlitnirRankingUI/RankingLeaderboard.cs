@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -11,14 +11,7 @@ namespace Glitnir.Ranking
             if (target == null || _database == null || _database.Entries == null)
                 return int.MaxValue;
 
-            List<RankingEntry> ordered = _database.Entries
-                .Where(x => x != null && !string.IsNullOrWhiteSpace(x.PlayerName) && !ShouldIgnorePlayerForRanking(x.PlayerName))
-                .OrderByDescending(x => x.Points)
-                .ThenByDescending(x => x.BossPointsTotal)
-                .ThenByDescending(x => x.KillPointsTotal)
-                .ThenByDescending(x => x.SkillPointsTotal)
-                .ThenBy(x => x.PlayerName)
-                .ToList();
+            IReadOnlyList<RankingEntry> ordered = GetOrderedRankingEntries();
 
             for (int i = 0; i < ordered.Count; i++)
             {
@@ -38,10 +31,13 @@ namespace Glitnir.Ranking
             if (string.IsNullOrWhiteSpace(playerName) || _database == null || _database.Entries == null)
                 return null;
 
-            return _database.Entries.FirstOrDefault(x =>
-                x != null &&
-                !string.IsNullOrWhiteSpace(x.PlayerName) &&
-                string.Equals(x.PlayerName, playerName, StringComparison.OrdinalIgnoreCase));
+            string safeName = SanitizePlayerName(playerName);
+            RankingEntry entry;
+            if (_entriesByPlayerName.TryGetValue(safeName, out entry))
+                return entry;
+
+            RebuildDatabaseIndexes();
+            return _entriesByPlayerName.TryGetValue(safeName, out entry) ? entry : null;
         }
 
         private string GetHudTopAccent(int position)

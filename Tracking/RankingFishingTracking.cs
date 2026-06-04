@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
@@ -60,7 +60,7 @@ namespace Glitnir.Ranking
             {
                 fishPrefab = SafeKey(fishPrefab);
                 if (IsFishPrefab(fishPrefab))
-                    DebugLog(DebugCategory.Points, "Peixe em inventário ignorado para evitar exploit: fish=" + fishPrefab + " amount=" + amount);
+                    DebugLog(DebugCategory.Points, "Peixe em inventÃ¡rio ignorado para evitar exploit: fish=" + fishPrefab + " amount=" + amount);
             }
             catch { }
         }
@@ -106,7 +106,7 @@ namespace Glitnir.Ranking
 
                 if (!IsValidFishCatchCreditKey(zdoKey))
                 {
-                    DebugLog(DebugCategory.Points, "Pesca rejeitada por chave inválida/forjada: player=" + playerName + " fish=" + fishPrefab + " zdo=" + zdoKey);
+                    DebugLog(DebugCategory.Points, "Pesca rejeitada por chave invÃ¡lida/forjada: player=" + playerName + " fish=" + fishPrefab + " zdo=" + zdoKey);
                     return;
                 }
 
@@ -148,7 +148,7 @@ namespace Glitnir.Ranking
 
                 if (HasFishingCatchCredit(zdoKey))
                 {
-                    DebugLog(DebugCategory.Points, "Pesca já creditada: zdo=" + zdoKey + " fish=" + fishPrefab + " source=" + source);
+                    DebugLog(DebugCategory.Points, "Pesca jÃ¡ creditada: zdo=" + zdoKey + " fish=" + fishPrefab + " source=" + source);
                     return;
                 }
 
@@ -162,6 +162,7 @@ namespace Glitnir.Ranking
 
 
                 IncrementProgressCounter(entry, "Fishing", fishPrefab, 1);
+                IncrementProgressCounter(entry, "Pesca", fishPrefab, 1);
 
                 MarkFishingCatchCredit(playerName, fishPrefab, zdoKey);
 
@@ -169,18 +170,13 @@ namespace Glitnir.Ranking
             }
             catch (Exception ex)
             {
-                Logger.LogError("Erro ao processar pontuação de pesca: " + ex);
+                Logger.LogError("Erro ao processar pontuaÃ§Ã£o de pesca: " + ex);
             }
         }
 
         private bool HasFishingCatchCredit(string zdoKey)
         {
-            if (string.IsNullOrWhiteSpace(zdoKey) || _database == null || _database.FishingCatchCredits == null)
-                return false;
-
-            return _database.FishingCatchCredits.Any(x =>
-                x != null &&
-                string.Equals(SafeKey(x.ZdoKey), SafeKey(zdoKey), StringComparison.OrdinalIgnoreCase));
+            return HasFishingCatchCreditCached(zdoKey);
         }
 
         private void MarkFishingCatchCredit(string playerName, string fishPrefab, string zdoKey)
@@ -218,7 +214,7 @@ namespace Glitnir.Ranking
                 Type floatType = AccessTools.TypeByName("FishingFloat");
                 if (floatType == null)
                 {
-                    GlitnirRankingPlugin.Log.LogWarning("[Ranking] Patch de pesca não aplicado: classe FishingFloat não encontrada.");
+                    GlitnirRankingPlugin.Log.LogWarning("[Ranking] Patch de pesca nÃ£o aplicado: classe FishingFloat nÃ£o encontrada.");
                     return false;
                 }
 
@@ -226,7 +222,7 @@ namespace Glitnir.Ranking
 
                 if (setCatch == null)
                 {
-                    GlitnirRankingPlugin.Log.LogWarning("[Ranking] Patch de pesca não aplicado: FishingFloat.SetCatch não encontrado.");
+                    GlitnirRankingPlugin.Log.LogWarning("[Ranking] Patch de pesca nÃ£o aplicado: FishingFloat.SetCatch nÃ£o encontrado.");
                     return false;
                 }
 
@@ -395,4 +391,133 @@ namespace Glitnir.Ranking
             return false;
         }
     }
+    [HarmonyPatch]
+    internal static class FishingDropBlockPatches
+    {
+        [HarmonyPrepare]
+        private static bool Prepare()
+        {
+            try
+            {
+                MethodInfo dropItem = AccessTools.Method(typeof(Player), "DropItem");
+                if (dropItem == null)
+                {
+                    GlitnirRankingPlugin.Log.LogWarning("[Ranking] Bloqueio de drop de peixe nÃ£o aplicado: Player.DropItem nÃ£o encontrado.");
+                    return false;
+                }
+
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        [HarmonyTargetMethods]
+        private static IEnumerable<MethodBase> TargetMethods()
+        {
+            MethodInfo dropItem = AccessTools.Method(typeof(Player), "DropItem");
+            if (dropItem != null)
+                yield return dropItem;
+        }
+
+        [HarmonyPrefix]
+        private static bool Prefix(object[] __args)
+        {
+            try
+            {
+                ItemDrop.ItemData item = TryExtractItemData(__args);
+                if (!IsFishItem(item))
+                    return true;
+
+                ShowBlockedDropMessage();
+                GlitnirRankingPlugin.Log.LogInfo("[Ranking] Drop de peixe bloqueado para evitar farm infinito de pontos.");
+                return false;
+            }
+            catch (Exception ex)
+            {
+                GlitnirRankingPlugin.Log.LogWarning("[Ranking] Erro ao validar bloqueio de drop de peixe: " + ex.Message);
+                return true;
+            }
+        }
+
+        private static ItemDrop.ItemData TryExtractItemData(object[] args)
+        {
+            if (args == null)
+                return null;
+
+            for (int i = 0; i < args.Length; i++)
+            {
+                ItemDrop.ItemData item = args[i] as ItemDrop.ItemData;
+                if (item != null)
+                    return item;
+            }
+
+            return null;
+        }
+
+        private static bool IsFishItem(ItemDrop.ItemData item)
+        {
+            if (item == null)
+                return false;
+
+            try
+            {
+                GameObject dropPrefab = item.m_dropPrefab;
+                if (dropPrefab != null)
+                {
+                    string prefabName = GetCleanName(dropPrefab.name);
+                    if (prefabName.StartsWith("Fish", StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+            catch { }
+
+            try
+            {
+                if (item.m_shared != null)
+                {
+                    string sharedName = item.m_shared.m_name ?? "";
+                    string sharedNameLower = sharedName.ToLowerInvariant();
+
+                    if (sharedNameLower.Contains("fish"))
+                        return true;
+
+
+                    if (sharedNameLower.Contains("$item_fish"))
+                        return true;
+                }
+            }
+            catch { }
+
+
+            return false;
+        }
+
+        private static string GetCleanName(string rawName)
+        {
+            if (string.IsNullOrWhiteSpace(rawName))
+                return "";
+
+            string name = rawName;
+            int idx = name.IndexOf('(');
+            if (idx > 0)
+                name = name.Substring(0, idx);
+
+            return name.Trim();
+        }
+
+        private static void ShowBlockedDropMessage()
+        {
+            try
+            {
+                if (MessageHud.instance != null)
+                    MessageHud.instance.ShowMessage(MessageHud.MessageType.Center, "Necromancia aquÃ¡tica detectada. Sjar estÃ¡ decepcionado.");
+            }
+            catch { }
+        }
+    }
+
+
 }

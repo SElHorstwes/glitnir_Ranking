@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Configuration;
 using BepPaths = BepInEx.Paths;
@@ -21,6 +21,9 @@ namespace Glitnir.Ranking
 {
     public partial class GlitnirRankingPlugin
     {
+        private readonly Dictionary<string, ConfigEntry<string>> _cfgProductionCategoryRuleEntries = new Dictionary<string, ConfigEntry<string>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, ConfigEntry<string>> _cfgUniqueCraftJackpotCategoryEntries = new Dictionary<string, ConfigEntry<string>>(StringComparer.OrdinalIgnoreCase);
+
         private void EnsureRulesFileExists()
         {
             try
@@ -447,7 +450,7 @@ namespace Glitnir.Ranking
                 MergeSectionOverrides(legacyOverrides, LoadSectionRulesOverrides(legacyRulesFilePath));
 
                 _rulesConfig = Config;
-                // ServerSync registra cada entrada sincronizada via BindConfig(..., synced: true).
+
 
                 BindSyncedRulesConfigEntries(legacyOverrides);
                 ApplyRulesFromSyncedConfig();
@@ -836,9 +839,21 @@ namespace Glitnir.Ranking
                 ReadLegacyString(legacyOverrides, "PointsExchangePrefab", defaults.PointsExchangePrefab),
                 "Prefab entregue no câmbio de pontos. Exemplo: Coins.", synced: true);
 
+            _cfgPointsExchangeUseCoinsPerPoint = _rulesConfig.BindConfig("PointsExchange", "UseCoinsPerPoint",
+                ReadLegacyBool(legacyOverrides, "PointsExchangeUseCoinsPerPoint", defaults.PointsExchangeUseCoinsPerPoint),
+                "Ativa o modo antigo: moedas por ponto. Por padrão fica false.", synced: true);
+
             _cfgPointsExchangeCoinsPerPoint = _rulesConfig.BindConfig("PointsExchange", "CoinsPerPoint",
                 ReadLegacyInt(legacyOverrides, "PointsExchangeCoinsPerPoint", defaults.PointsExchangeCoinsPerPoint),
-                "Quantidade de moedas entregues por cada ponto trocado.", synced: true);
+                "Quantidade de moedas entregues por cada ponto trocado. Só é usado se UseCoinsPerPoint=true.", synced: true);
+
+            _cfgPointsExchangeUsePointsPerCoin = _rulesConfig.BindConfig("PointsExchange", "UsePointsPerCoin",
+                ReadLegacyBool(legacyOverrides, "PointsExchangeUsePointsPerCoin", defaults.PointsExchangeUsePointsPerCoin),
+                "Ativa o modo recomendado: pontos necessários para receber 1 moeda.", synced: true);
+
+            _cfgPointsExchangePointsPerCoin = _rulesConfig.BindConfig("PointsExchange", "PointsPerCoin",
+                ReadLegacyInt(legacyOverrides, "PointsExchangePointsPerCoin", defaults.PointsExchangePointsPerCoin),
+                "Quantidade de pontos necessários para receber 1 moeda. Exemplo: 100 = a cada 100 pontos, 1 coin.", synced: true);
 
             _cfgPointsExchangeMinPoints = _rulesConfig.BindConfig("PointsExchange", "MinPoints",
                 ReadLegacyInt(legacyOverrides, "PointsExchangeMinPoints", defaults.PointsExchangeMinPoints),
@@ -875,9 +890,7 @@ namespace Glitnir.Ranking
 
             BindCombatBiomeRuleEntries(legacyOverrides);
 
-            _cfgProductionCategoryRules = _rulesConfig.BindConfig("HudCategories", "Production",
-                ReadLegacyString(legacyOverrides, "HudCategories.Production", DefaultProductionCategoryRules),
-                "Producao/Conquistas por categoria COM pontos. O nome da categoria do config vira a aba do HUD. Formato obrigatorio: Categoria:Prefab=pontos,Prefab=pontos;Outra:Prefab=pontos. Exemplo: Armas:SwordIron=800;Armaduras:HelmetBronze=800;Comidas:DeerStew=25. Tambem organiza FarmJackpots e UniqueCraftJackpots.", synced: true);
+            BindProductionCategoryEntries(legacyOverrides);
 
 
             BindPointSectionEntries("BossPoints", "Pontos por bosses e minibosses.", legacyOverrides, _cfgBossPointEntries);
@@ -889,9 +902,449 @@ namespace Glitnir.Ranking
                 ReadGroupedRulesDefault(legacyOverrides, "FarmJackpots", "Carrot:200:1000;Turnip:200:1200;Onion:200:1500;Barley:500:2000;Flax:500:2000"),
                 "Jackpots de colheita. Edite somente esta linha. Formato: Prefab:quantidade:pontos;Prefab:quantidade:pontos. Exemplo: Carrot:200:1000;Barley:500:2000.", synced: true);
 
-            _cfgUniqueCraftJackpotRules = _rulesConfig.BindConfig("UniqueCraftJackpots", "Rules",
-                ReadGroupedRulesDefault(legacyOverrides, "UniqueCraftJackpots", "SwordIron:1:800;SwordSilver:1:1500;SwordBlackmetal:1:2500;ArmorWolfChest:1:2000;ArmorCarapaceChest:1:3500"),
-                "Jackpot único por craft. Edite somente esta linha. Formato: Prefab:quantidade:pontos;Prefab:quantidade:pontos. Exemplo: SwordIron:1:800;ArmorWolfChest:1:2000.", synced: true);
+            BindUniqueCraftJackpotCategoryEntries(legacyOverrides);
+        }
+
+
+
+        private void BindUniqueCraftJackpotCategoryEntries(Dictionary<string, string> legacyOverrides)
+        {
+            if (_cfgUniqueCraftJackpotCategoryEntries == null)
+                return;
+
+            _cfgUniqueCraftJackpotCategoryEntries.Clear();
+
+            Dictionary<string, string> defaults = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Armas", "SwordIron;1;800,SwordSilver;1;1500,SwordBlackmetal;1;2500" },
+                { "Armaduras", "ArmorWolfChest;1;2000,ArmorCarapaceChest;1;3500" },
+                { "Outros", "" }
+            };
+
+            string legacyRules = ReadLegacyString(legacyOverrides, "UniqueCraftJackpots.Rules", null);
+            if (!string.IsNullOrWhiteSpace(legacyRules))
+            {
+                foreach (KeyValuePair<string, string> pair in SplitUniqueCraftJackpotsIntoCategories(legacyRules))
+                    defaults[pair.Key] = MergeCommaRules(defaults.ContainsKey(pair.Key) ? defaults[pair.Key] : string.Empty, pair.Value);
+            }
+
+            if (legacyOverrides != null)
+            {
+                foreach (KeyValuePair<string, string> pair in legacyOverrides)
+                {
+                    if (string.IsNullOrWhiteSpace(pair.Key))
+                        continue;
+
+                    const string prefix = "UniqueCraftJackpots.";
+                    if (!pair.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string category = NormalizeHudCategoryName(pair.Key.Substring(prefix.Length));
+                    if (string.IsNullOrWhiteSpace(category))
+                        continue;
+
+                    if (category.Equals("Rules", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string converted = ConvertUniqueCraftJackpotItemsToConfigValue(pair.Value);
+                    if (!string.IsNullOrWhiteSpace(converted) || !defaults.ContainsKey(category))
+                        defaults[category] = converted;
+                }
+            }
+
+            if (!defaults.ContainsKey("Outros"))
+                defaults["Outros"] = string.Empty;
+
+            foreach (string category in GetPreferredCategoryOrder(defaults, new[] { "Armas", "Armaduras", "Ferramentas", "Comidas", "Outros" }))
+                BindSingleUniqueCraftJackpotCategory(category, legacyOverrides, defaults[category]);
+        }
+
+        private void BindSingleUniqueCraftJackpotCategory(string category, Dictionary<string, string> legacyOverrides, string defaultValue)
+        {
+            category = NormalizeHudCategoryName(category);
+            if (string.IsNullOrWhiteSpace(category))
+                return;
+
+            string value = ReadLegacyString(legacyOverrides, "UniqueCraftJackpots." + category, defaultValue);
+            value = ConvertUniqueCraftJackpotItemsToConfigValue(value);
+
+            ConfigEntry<string> entry = _rulesConfig.BindConfig(
+                "UniqueCraftJackpots",
+                category,
+                value,
+                "Jackpot único por craft para esta categoria. Formato: Prefab;Quantidade;Pontos,OutroPrefab;Quantidade;Pontos. Exemplo: SwordIron;1;800,ArmorWolfChest;1;2000. Aceita qualquer prefab, inclusive de mods. O nome desta chave vira a categoria da config.",
+                synced: true);
+
+            _cfgUniqueCraftJackpotCategoryEntries[category] = entry;
+        }
+
+        private Dictionary<string, string> SplitUniqueCraftJackpotsIntoCategories(string raw)
+        {
+            Dictionary<string, List<string>> buckets = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Armas", new List<string>() },
+                { "Armaduras", new List<string>() },
+                { "Outros", new List<string>() }
+            };
+
+            foreach (KeyValuePair<string, JackpotRule> pair in ParseFlexibleJackpotRules(raw))
+            {
+                string category = GuessUniqueCraftJackpotCategory(pair.Key);
+                if (!buckets.ContainsKey(category))
+                    buckets[category] = new List<string>();
+
+                JackpotRule rule = pair.Value;
+                buckets[category].Add(pair.Key + ";" + Mathf.Max(1, rule.RequiredAmount) + ";" + Mathf.Max(0, rule.Points));
+            }
+
+            Dictionary<string, string> result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+            foreach (KeyValuePair<string, List<string>> pair in buckets)
+                result[pair.Key] = string.Join(",", pair.Value.ToArray());
+
+            return result;
+        }
+
+        private string GuessUniqueCraftJackpotCategory(string prefab)
+        {
+            string key = SafeKey(prefab);
+            if (string.IsNullOrWhiteSpace(key))
+                return "Outros";
+
+            if (key.StartsWith("Sword", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Axe", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Mace", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Knife", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Atgeir", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Spear", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Bow", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Crossbow", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Shield", StringComparison.OrdinalIgnoreCase))
+                return "Armas";
+
+            if (key.StartsWith("Armor", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Helmet", StringComparison.OrdinalIgnoreCase) ||
+                key.StartsWith("Cape", StringComparison.OrdinalIgnoreCase))
+                return "Armaduras";
+
+            return "Outros";
+        }
+
+        private string MergeCommaRules(string current, string extra)
+        {
+            current = current != null ? current.Trim() : string.Empty;
+            extra = extra != null ? extra.Trim() : string.Empty;
+
+            if (string.IsNullOrWhiteSpace(current))
+                return extra;
+            if (string.IsNullOrWhiteSpace(extra))
+                return current;
+
+            return current + "," + extra;
+        }
+
+        private string BuildUniqueCraftJackpotRulesFromCategoryEntries()
+        {
+            if (_cfgUniqueCraftJackpotCategoryEntries == null || _cfgUniqueCraftJackpotCategoryEntries.Count == 0)
+                return string.Empty;
+
+            StringBuilder sb = new StringBuilder();
+            foreach (KeyValuePair<string, ConfigEntry<string>> pair in _cfgUniqueCraftJackpotCategoryEntries)
+            {
+                if (pair.Value == null)
+                    continue;
+
+                foreach (KeyValuePair<string, JackpotRule> rulePair in ParseFlexibleJackpotRules(pair.Value.Value))
+                {
+                    if (sb.Length > 0)
+                        sb.Append(';');
+
+                    JackpotRule rule = rulePair.Value;
+                    sb.Append(SafeKey(rulePair.Key));
+                    sb.Append(':');
+                    sb.Append(Mathf.Max(1, rule.RequiredAmount));
+                    sb.Append(':');
+                    sb.Append(Mathf.Max(0, rule.Points));
+                }
+            }
+
+            return sb.ToString();
+        }
+
+        private string ConvertUniqueCraftJackpotItemsToConfigValue(string raw)
+        {
+            List<string> items = new List<string>();
+            foreach (KeyValuePair<string, JackpotRule> pair in ParseFlexibleJackpotRules(raw))
+            {
+                JackpotRule rule = pair.Value;
+                items.Add(SafeKey(pair.Key) + ";" + Mathf.Max(1, rule.RequiredAmount) + ";" + Mathf.Max(0, rule.Points));
+            }
+
+            return string.Join(",", items.ToArray());
+        }
+
+        private Dictionary<string, JackpotRule> ParseFlexibleJackpotRules(string raw)
+        {
+            Dictionary<string, JackpotRule> result = new Dictionary<string, JackpotRule>(StringComparer.OrdinalIgnoreCase);
+
+            if (string.IsNullOrWhiteSpace(raw))
+                return result;
+
+            string normalized = raw.Replace("\r", "\n").Replace("|", ",");
+            List<string> entries = new List<string>();
+
+            if (normalized.IndexOf(',') >= 0 || normalized.IndexOf('\n') >= 0)
+            {
+                foreach (string entryRaw in normalized.Split(new[] { ',', '\n' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string entry = entryRaw != null ? entryRaw.Trim() : string.Empty;
+                    if (!string.IsNullOrWhiteSpace(entry))
+                        entries.Add(entry);
+                }
+            }
+            else if (normalized.IndexOf(':') >= 0)
+            {
+                foreach (string entryRaw in normalized.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    string entry = entryRaw != null ? entryRaw.Trim() : string.Empty;
+                    if (!string.IsNullOrWhiteSpace(entry))
+                        entries.Add(entry);
+                }
+            }
+            else
+            {
+                string[] tokens = normalized.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries);
+                for (int i = 0; i + 2 < tokens.Length; i += 3)
+                    entries.Add(tokens[i].Trim() + ";" + tokens[i + 1].Trim() + ";" + tokens[i + 2].Trim());
+            }
+
+            foreach (string entry in entries)
+            {
+                string prefab;
+                int amount;
+                int points;
+
+                if (!TryParseFlexibleJackpotItem(entry, out prefab, out amount, out points))
+                    continue;
+
+                result[prefab] = new JackpotRule
+                {
+                    RequiredAmount = Mathf.Max(1, amount),
+                    Points = Mathf.Max(0, points)
+                };
+            }
+
+            return result;
+        }
+
+        private bool TryParseFlexibleJackpotItem(string entry, out string prefab, out int amount, out int points)
+        {
+            prefab = string.Empty;
+            amount = 0;
+            points = 0;
+
+            if (string.IsNullOrWhiteSpace(entry))
+                return false;
+
+            string[] parts = entry.IndexOf(';') >= 0
+                ? entry.Split(new[] { ';' }, 3, StringSplitOptions.None)
+                : entry.Split(new[] { ':' }, 3, StringSplitOptions.None);
+
+            if (parts.Length != 3)
+                return false;
+
+            prefab = SafeKey(parts[0]);
+            if (string.IsNullOrWhiteSpace(prefab))
+                return false;
+
+            if (!int.TryParse(parts[1].Trim(), out amount))
+                return false;
+
+            if (!int.TryParse(parts[2].Trim(), out points))
+                return false;
+
+            amount = Mathf.Max(1, amount);
+            points = Mathf.Max(0, points);
+            return true;
+        }
+
+        private void BindProductionCategoryEntries(Dictionary<string, string> legacyOverrides)
+        {
+            if (_cfgProductionCategoryRuleEntries == null)
+                return;
+
+            _cfgProductionCategoryRuleEntries.Clear();
+
+            Dictionary<string, string> defaults = ParseProductionCategoryDefaults(DefaultProductionCategoryRules);
+
+            string legacyProduction = ReadLegacyString(legacyOverrides, "HudCategories.Production", null);
+            if (!string.IsNullOrWhiteSpace(legacyProduction))
+            {
+                foreach (KeyValuePair<string, string> pair in ParseProductionCategoryDefaults(legacyProduction))
+                    defaults[pair.Key] = pair.Value;
+            }
+
+            if (legacyOverrides != null)
+            {
+                foreach (KeyValuePair<string, string> pair in legacyOverrides)
+                {
+                    if (string.IsNullOrWhiteSpace(pair.Key))
+                        continue;
+
+                    const string prefix = "HudCategories.";
+                    if (!pair.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string category = NormalizeHudCategoryName(pair.Key.Substring(prefix.Length));
+                    if (string.IsNullOrWhiteSpace(category))
+                        continue;
+
+                    if (category.Equals("Production", StringComparison.OrdinalIgnoreCase) ||
+                        category.Equals("Combat", StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string converted = ConvertProductionCategoryItemsToConfigValue(pair.Value);
+                    if (!string.IsNullOrWhiteSpace(converted))
+                        defaults[category] = converted;
+                }
+            }
+
+            if (defaults.Count <= 0)
+            {
+                defaults["Armas"] = "SwordIron;800";
+                defaults["Armaduras"] = "HelmetBronze;800";
+                defaults["Comidas"] = "DeerStew;25";
+            }
+
+            if (!defaults.ContainsKey("Outros"))
+                defaults["Outros"] = string.Empty;
+
+            foreach (string category in GetPreferredCategoryOrder(defaults, new[] { "Armas", "Armaduras", "Comidas", "Ferramentas", "Materiais", "Outros" }))
+                BindSingleProductionCategory(category, legacyOverrides, defaults[category]);
+        }
+
+        private void BindSingleProductionCategory(string category, Dictionary<string, string> legacyOverrides, string defaultValue)
+        {
+            category = NormalizeHudCategoryName(category);
+            if (string.IsNullOrWhiteSpace(category))
+                return;
+
+            string value = ReadLegacyString(legacyOverrides, "HudCategories." + category, defaultValue);
+            value = ConvertProductionCategoryItemsToConfigValue(value);
+
+            ConfigEntry<string> entry = _rulesConfig.BindConfig(
+                "HudCategories",
+                category,
+                value,
+                "Produção/Conquistas para esta aba do HUD. Formato: Prefab;Pontos,OutroPrefab;Pontos. Exemplo: SwordIron;800,HelmetBronze;800,DeerStew;25. Aceita prefabs de mods. O nome desta chave vira a categoria no HUD.",
+                synced: true);
+
+            _cfgProductionCategoryRuleEntries[category] = entry;
+
+            if (_cfgProductionCategoryRules == null)
+                _cfgProductionCategoryRules = entry;
+        }
+
+        private Dictionary<string, string> ParseProductionCategoryDefaults(string raw)
+        {
+            Dictionary<string, string> result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+            if (string.IsNullOrWhiteSpace(raw))
+                return result;
+
+            string[] groups = raw.Split(new[] { ';', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string groupRaw in groups)
+            {
+                string group = groupRaw != null ? groupRaw.Trim() : string.Empty;
+                if (string.IsNullOrWhiteSpace(group))
+                    continue;
+
+                int colon = group.IndexOf(':');
+                if (colon <= 0 || colon >= group.Length - 1)
+                    continue;
+
+                string category = NormalizeHudCategoryName(group.Substring(0, colon).Trim());
+                string itemsRaw = group.Substring(colon + 1).Trim();
+                if (string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(itemsRaw))
+                    continue;
+
+                string converted = ConvertProductionCategoryItemsToConfigValue(itemsRaw);
+                if (!string.IsNullOrWhiteSpace(converted))
+                    result[category] = converted;
+            }
+
+            return result;
+        }
+
+        private string BuildProductionCategoryRules()
+        {
+            if (_cfgProductionCategoryRuleEntries == null || _cfgProductionCategoryRuleEntries.Count == 0)
+                return DefaultProductionCategoryRules;
+
+            try
+            {
+                List<string> parts = new List<string>();
+
+                foreach (KeyValuePair<string, ConfigEntry<string>> pair in _cfgProductionCategoryRuleEntries)
+                {
+                    if (pair.Value == null)
+                        continue;
+
+                    string category = NormalizeHudCategoryName(pair.Key);
+                    if (string.IsNullOrWhiteSpace(category))
+                        continue;
+
+                    string convertedItems = ConvertProductionCategoryItemsToHudCategoryItems(pair.Value.Value);
+                    if (string.IsNullOrWhiteSpace(convertedItems))
+                        continue;
+
+                    parts.Add(category + ":" + convertedItems);
+                }
+
+                if (parts.Count <= 0)
+                    return DefaultProductionCategoryRules;
+
+                return string.Join(";", parts.ToArray());
+            }
+            catch
+            {
+                return DefaultProductionCategoryRules;
+            }
+        }
+
+        private string ConvertProductionCategoryItemsToConfigValue(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return string.Empty;
+
+            List<string> items = new List<string>();
+            string[] entries = raw.Split(new[] { ',', '|', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string entryRaw in entries)
+            {
+                string prefab;
+                int points;
+                if (TryParseCombatBiomeItem(entryRaw, out prefab, out points))
+                    items.Add(prefab + ";" + Mathf.Max(0, points));
+            }
+
+            return string.Join(",", items.ToArray());
+        }
+
+        private string ConvertProductionCategoryItemsToHudCategoryItems(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return string.Empty;
+
+            List<string> items = new List<string>();
+            string[] entries = raw.Split(new[] { ',', '|', '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+            foreach (string entryRaw in entries)
+            {
+                string prefab;
+                int points;
+                if (TryParseCombatBiomeItem(entryRaw, out prefab, out points))
+                    items.Add(prefab + "=" + Mathf.Max(0, points));
+            }
+
+            return string.Join(",", items.ToArray());
         }
 
         private void BindCombatBiomeRuleEntries(Dictionary<string, string> legacyOverrides)
@@ -901,35 +1354,88 @@ namespace Glitnir.Ranking
 
             _cfgCombatBiomeRuleEntries.Clear();
 
-            Dictionary<string, string> defaults = ParseCombatBiomeDefaults(DefaultCombatCategoryRules);
+            Dictionary<string, string> categories = ParseCombatBiomeDefaults(DefaultCombatCategoryRules);
 
-            BindSingleCombatBiome("Prados", defaults, legacyOverrides);
-            BindSingleCombatBiome("Floresta Negra", defaults, legacyOverrides);
-            BindSingleCombatBiome("Pântano", defaults, legacyOverrides);
-            BindSingleCombatBiome("Montanha", defaults, legacyOverrides);
-            BindSingleCombatBiome("Planícies", defaults, legacyOverrides);
-            BindSingleCombatBiome("Oceano", defaults, legacyOverrides);
-            BindSingleCombatBiome("Mistlands", defaults, legacyOverrides);
-            BindSingleCombatBiome("Ashlands", defaults, legacyOverrides);
-            BindSingleCombatBiome("Especiais", defaults, legacyOverrides);
+            if (!categories.ContainsKey("Outros"))
+                categories["Outros"] = string.Empty;
 
+            if (legacyOverrides != null)
+            {
+                foreach (KeyValuePair<string, string> pair in legacyOverrides)
+                {
+                    if (string.IsNullOrWhiteSpace(pair.Key))
+                        continue;
 
+                    const string prefix = "Combat.";
+                    if (!pair.Key.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string category = NormalizeHudCategoryName(pair.Key.Substring(prefix.Length));
+                    if (string.IsNullOrWhiteSpace(category))
+                        continue;
+
+                    string converted = ConvertProductionCategoryItemsToConfigValue(pair.Value);
+                    categories[category] = converted;
+                }
+            }
+
+            foreach (string category in GetPreferredCategoryOrder(categories, new[] {
+                "Prados", "Floresta Negra", "Pântano", "Montanha", "Planícies",
+                "Oceano", "Mistlands", "Ashlands", "Especiais", "Outros"
+            }))
+                BindSingleCombatBiome(category, categories, legacyOverrides);
         }
 
         private void BindSingleCombatBiome(string category, Dictionary<string, string> defaults, Dictionary<string, string> legacyOverrides)
         {
+            category = NormalizeHudCategoryName(category);
+            if (string.IsNullOrWhiteSpace(category))
+                return;
+
             string defaultValue;
             if (defaults == null || !defaults.TryGetValue(category, out defaultValue))
                 defaultValue = string.Empty;
 
             string value = ReadLegacyString(legacyOverrides, "Combat." + category, defaultValue);
+            value = ConvertProductionCategoryItemsToConfigValue(value);
 
             _cfgCombatBiomeRuleEntries[category] = _rulesConfig.BindConfig(
                 "Combat",
                 category,
                 value,
-                "Mobs e pontos para esta aba do HUD. Formato: Prefab;Pontos,OutroPrefab;Pontos. Exemplo: Boar;2,Deer;3. Aceita qualquer prefab, inclusive de mods. O nome desta chave vira a categoria no HUD.",
+                "Mobs e pontos para esta aba do HUD. Formato: Prefab;Pontos,OutroPrefab;Pontos. Exemplo: Boar;2,Deer;3. Aceita qualquer quantidade de prefabs, inclusive de mods. O nome desta chave vira a categoria no HUD.",
                 synced: true);
+        }
+
+        private IEnumerable<string> GetPreferredCategoryOrder(Dictionary<string, string> categories, string[] preferredOrder)
+        {
+            HashSet<string> emitted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (preferredOrder != null)
+            {
+                foreach (string preferred in preferredOrder)
+                {
+                    string category = NormalizeHudCategoryName(preferred);
+                    if (string.IsNullOrWhiteSpace(category))
+                        continue;
+
+                    if (categories != null && categories.ContainsKey(category) && emitted.Add(category))
+                        yield return category;
+                }
+            }
+
+            if (categories == null)
+                yield break;
+
+            foreach (string category in categories.Keys.OrderBy(k => k, StringComparer.OrdinalIgnoreCase))
+            {
+                string clean = NormalizeHudCategoryName(category);
+                if (string.IsNullOrWhiteSpace(clean))
+                    continue;
+
+                if (emitted.Add(clean))
+                    yield return clean;
+            }
         }
 
         private Dictionary<string, string> ParseCombatBiomeDefaults(string raw)
@@ -1073,27 +1579,6 @@ namespace Glitnir.Ranking
                 };
 
                 cleaned.Add("## Glitnir Ranking - Regras de pontuação");
-                cleaned.Add("##");
-                cleaned.Add("## Edite este arquivo no servidor. As regras marcadas como synced são enviadas aos clientes.");
-                cleaned.Add("##");
-                cleaned.Add("## Combate fica em [Combat], uma chave por bioma/categoria, exatamente igual ao HUD.");
-                cleaned.Add("##   [Combat]");
-                cleaned.Add("##   Prados = Boar;2,Deer;3");
-                cleaned.Add("##   Floresta Negra = Troll;20,Greydwarf;1");
-                cleaned.Add("##   Pântano = Draugr;2,Blob;2");
-                cleaned.Add("##   [UniqueCraftJackpots]     Rules = Prefab:quantidade:pontos;Prefab:quantidade:pontos");
-                cleaned.Add("##   [DeathPenalty]            Rules = mortes:pontosPerdidos,mortes:pontosPerdidos");
-                cleaned.Add("##   [ExplorationMapJackpots]  Rules = porcentagem:pontos;porcentagem:pontos");
-                cleaned.Add("##");
-                cleaned.Add("## Exemplos de prefabs reais comuns:");
-                cleaned.Add("##   Carrot:200:1000");
-                cleaned.Add("##   SwordIron:1:800");
-                cleaned.Add("##   ArmorWolfChest:1:2000");
-                cleaned.Add("##   1:0,2:100,5:300,10:800");
-                cleaned.Add("##");
-                cleaned.Add("## Importante: se um item não pontuar, ative DebugLogging/LogPointsChanges e veja no log");
-                cleaned.Add("## o prefab detectado pelo ranking no momento do kill, craft ou colheita.");
-                cleaned.Add("");
 
                 bool insertedFarm = false;
                 bool insertedUnique = false;
@@ -1109,10 +1594,12 @@ namespace Glitnir.Ranking
 
 
                     if (string.Equals(currentSection, "HudCategories", StringComparison.OrdinalIgnoreCase) &&
-                        line.StartsWith("Combat", StringComparison.OrdinalIgnoreCase) &&
                         line.IndexOf('=') > 0)
                     {
-                        continue;
+                        string hudKey = line.Substring(0, line.IndexOf('=')).Trim();
+                        if (hudKey.Equals("Combat", StringComparison.OrdinalIgnoreCase) ||
+                            hudKey.Equals("Production", StringComparison.OrdinalIgnoreCase))
+                            continue;
                     }
 
                     if (line.StartsWith("[") && line.EndsWith("]"))
@@ -1189,10 +1676,35 @@ namespace Glitnir.Ranking
             lines.Add("");
             lines.Add("[UniqueCraftJackpots]");
             lines.Add("");
-            lines.Add("## Jackpot único por craft de qualquer prefab configurado.");
-            lines.Add("## Formato: Prefab:quantidade:pontos;Prefab:quantidade:pontos");
-            lines.Add("## Exemplo: SwordIron:1:800;ArmorWolfChest:1:2000");
-            lines.Add("Rules = " + (_cfgUniqueCraftJackpotRules != null ? SanitizeDelimitedJackpotRules(_cfgUniqueCraftJackpotRules.Value) : "SwordIron:1:800;ArmorWolfChest:1:2000"));
+            lines.Add("## Jackpot único por craft separado por categoria, igual ao modelo do Combat.");
+            lines.Add("## Formato: Prefab;Quantidade;Pontos,OutroPrefab;Quantidade;Pontos");
+            lines.Add("## Exemplo: SwordIron;1;800,SwordSilver;1;1500");
+            lines.Add("## Aceita qualquer prefab, inclusive de mods. Use Outros para o que não couber nas categorias.");
+
+            if (_cfgUniqueCraftJackpotCategoryEntries != null && _cfgUniqueCraftJackpotCategoryEntries.Count > 0)
+            {
+                Dictionary<string, string> categories = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                foreach (KeyValuePair<string, ConfigEntry<string>> pair in _cfgUniqueCraftJackpotCategoryEntries)
+                {
+                    string category = NormalizeHudCategoryName(pair.Key);
+                    if (string.IsNullOrWhiteSpace(category))
+                        continue;
+
+                    categories[category] = pair.Value != null ? ConvertUniqueCraftJackpotItemsToConfigValue(pair.Value.Value) : string.Empty;
+                }
+
+                if (!categories.ContainsKey("Outros"))
+                    categories["Outros"] = string.Empty;
+
+                foreach (string category in GetPreferredCategoryOrder(categories, new[] { "Armas", "Armaduras", "Ferramentas", "Comidas", "Outros" }))
+                    lines.Add(category + " = " + categories[category]);
+            }
+            else
+            {
+                lines.Add("Armas = SwordIron;1;800,SwordSilver;1;1500,SwordBlackmetal;1;2500");
+                lines.Add("Armaduras = ArmorWolfChest;1;2000,ArmorCarapaceChest;1;3500");
+                lines.Add("Outros = ");
+            }
         }
 
         private void AppendGroupedDeathPenaltySection(List<string> lines)
@@ -2084,12 +2596,15 @@ namespace Glitnir.Ranking
             if (_cfgRewardTop3Amount != null) rules.RewardTop3Amount = Mathf.Max(0, _cfgRewardTop3Amount.Value);
             if (_cfgPointsExchangeEnabled != null) rules.PointsExchangeEnabled = _cfgPointsExchangeEnabled.Value;
             if (_cfgPointsExchangePrefab != null) rules.PointsExchangePrefab = SafeLimit(_cfgPointsExchangePrefab.Value, 96);
+            if (_cfgPointsExchangeUseCoinsPerPoint != null) rules.PointsExchangeUseCoinsPerPoint = _cfgPointsExchangeUseCoinsPerPoint.Value;
             if (_cfgPointsExchangeCoinsPerPoint != null) rules.PointsExchangeCoinsPerPoint = Mathf.Max(1, _cfgPointsExchangeCoinsPerPoint.Value);
+            if (_cfgPointsExchangeUsePointsPerCoin != null) rules.PointsExchangeUsePointsPerCoin = _cfgPointsExchangeUsePointsPerCoin.Value;
+            if (_cfgPointsExchangePointsPerCoin != null) rules.PointsExchangePointsPerCoin = Mathf.Max(1, _cfgPointsExchangePointsPerCoin.Value);
             if (_cfgPointsExchangeMinPoints != null) rules.PointsExchangeMinPoints = Mathf.Max(0, _cfgPointsExchangeMinPoints.Value);
             if (_cfgPointsExchangeMaxPointsPerRequest != null) rules.PointsExchangeMaxPointsPerRequest = Mathf.Max(0, _cfgPointsExchangeMaxPointsPerRequest.Value);
 
             string combatCategoryRaw = BuildCombatCategoryRulesFromBiomeEntries();
-            string productionCategoryRaw = _cfgProductionCategoryRules != null ? _cfgProductionCategoryRules.Value : DefaultProductionCategoryRules;
+            string productionCategoryRaw = BuildProductionCategoryRules();
 
             Dictionary<string, string> combatCategories;
             foreach (KeyValuePair<string, int> pair in ParseHudCategorizedPointRules(combatCategoryRaw, out combatCategories))
@@ -2140,11 +2655,9 @@ namespace Glitnir.Ranking
                     rules.FarmJackpots[pair.Key] = pair.Value;
             }
 
-            if (_cfgUniqueCraftJackpotRules != null)
-            {
-                foreach (KeyValuePair<string, JackpotRule> pair in ParseDelimitedJackpotRules(_cfgUniqueCraftJackpotRules.Value))
-                    rules.UniqueCraftJackpots[pair.Key] = pair.Value;
-            }
+            string uniqueCraftJackpotRaw = BuildUniqueCraftJackpotRulesFromCategoryEntries();
+            foreach (KeyValuePair<string, JackpotRule> pair in ParseFlexibleJackpotRules(uniqueCraftJackpotRaw))
+                rules.UniqueCraftJackpots[pair.Key] = pair.Value;
 
             if (_cfgMarketplaceQuestPointMap != null)
             {

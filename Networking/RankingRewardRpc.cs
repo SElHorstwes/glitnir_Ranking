@@ -395,9 +395,30 @@ namespace Glitnir.Ranking
                 }
 
                 int pointsToExchange = requestedPoints;
+                int amount = 0;
 
-                int coinsPerPoint = Mathf.Max(1, _rules.PointsExchangeCoinsPerPoint);
-                int amount = Mathf.Max(1, pointsToExchange * coinsPerPoint);
+                if (_rules.PointsExchangeUsePointsPerCoin)
+                {
+                    int pointsPerCoin = Mathf.Max(1, _rules.PointsExchangePointsPerCoin);
+                    amount = Mathf.Max(0, requestedPoints / pointsPerCoin);
+                    pointsToExchange = amount * pointsPerCoin;
+
+                    if (amount <= 0 || pointsToExchange <= 0)
+                    {
+                        SendPointsExchangeFeedback(sender, false, "Você precisa de pelo menos " + pointsPerCoin + " pontos para receber 1 moeda.");
+                        return;
+                    }
+                }
+                else if (_rules.PointsExchangeUseCoinsPerPoint)
+                {
+                    int coinsPerPoint = Mathf.Max(1, _rules.PointsExchangeCoinsPerPoint);
+                    amount = Mathf.Max(1, pointsToExchange * coinsPerPoint);
+                }
+                else
+                {
+                    SendPointsExchangeFeedback(sender, false, "Nenhum modo de câmbio está ativo. Ative UsePointsPerCoin ou UseCoinsPerPoint.");
+                    return;
+                }
 
                 _pendingPointsExchanges.Add(pendingKey);
 

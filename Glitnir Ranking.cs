@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Configuration;
 using BepPaths = BepInEx.Paths;
@@ -25,7 +25,7 @@ namespace Glitnir.Ranking
     {
         public const string ModGuid = "com.glitnir.ranking";
         public const string ModName = "Glitnir Ranking";
-        public const string ModVersion = "0.7.53";
+        public const string ModVersion = "0.7.66";
 
         internal static GlitnirRankingPlugin Instance;
         internal static ManualLogSource Log;
@@ -73,11 +73,14 @@ namespace Glitnir.Ranking
 
         private Type _hudLocalizationType;
         private FieldInfo _hudLocalizationInstanceField;
+        private PropertyInfo _hudLocalizationInstanceProperty;
         private MethodInfo _hudLocalizationLocalizeMethod;
         private bool _hudLocalizationReflectionReady;
 
         private Harmony _harmony;
         private bool _rpcsRegistered = false;
+        private ZRoutedRpc _registeredRoutedRpcInstance;
+        private readonly object _databaseSaveLock = new object();
 
         private string _rulesFilePath;
         private string _uiFolderPath;
@@ -119,7 +122,6 @@ namespace Glitnir.Ranking
         private ConfigEntry<string> _cfgProductionCategoryRules;
         private ConfigEntry<string> _cfgMarketplaceQuestPointMap;
         private ConfigEntry<string> _cfgFarmJackpotRules;
-        private ConfigEntry<string> _cfgUniqueCraftJackpotRules;
         private ConfigEntry<bool> _cfgRewardClaimsEnabled;
         private ConfigEntry<string> _cfgRewardClaimCycleId;
         private ConfigEntry<int> _cfgRewardTop1MinPoints;
@@ -136,7 +138,10 @@ namespace Glitnir.Ranking
         private ConfigEntry<int> _cfgRewardTop3Amount;
         private ConfigEntry<bool> _cfgPointsExchangeEnabled;
         private ConfigEntry<string> _cfgPointsExchangePrefab;
+        private ConfigEntry<bool> _cfgPointsExchangeUseCoinsPerPoint;
         private ConfigEntry<int> _cfgPointsExchangeCoinsPerPoint;
+        private ConfigEntry<bool> _cfgPointsExchangeUsePointsPerCoin;
+        private ConfigEntry<int> _cfgPointsExchangePointsPerCoin;
         private ConfigEntry<int> _cfgPointsExchangeMinPoints;
         private ConfigEntry<int> _cfgPointsExchangeMaxPointsPerRequest;
 
@@ -215,6 +220,8 @@ namespace Glitnir.Ranking
         private float _lastReportedMapExplorePercent = -1f;
         private long _lastKnownServerPeerUid;
         private bool _requestedInitialServerSnapshot;
+        private string _lastSnapshotSyncPlayerName = "";
+        private bool _lastSnapshotHadLocalPlayer;
         private string _cachedTopText = "Carregando ranking...";
         private string _cachedPlayerText = "Aguardando dados do servidor...";
         private string _statusText = "Sincronizando...";
@@ -298,6 +305,8 @@ namespace Glitnir.Ranking
             public int TotalKillsPontuadas;
             public int TotalBossesPontuadas;
             public int TotalSkillLevelUpsPontuados;
+            public int TotalMarketplaceQuestsPontuadas;
+            public int MarketplaceQuestPointsTotal;
             public int TotalFishingPontuadas;
             public int TotalCraftPontuadas;
             public int TotalFarmJackpotsPontuados;
@@ -328,9 +337,11 @@ namespace Glitnir.Ranking
             public int TotalKillsPontuadas;
             public int TotalBossesPontuadas;
             public int TotalSkillLevelUpsPontuados;
+            public int TotalMarketplaceQuestsPontuadas;
             public int KillPointsTotal;
             public int BossPointsTotal;
             public int SkillPointsTotal;
+            public int MarketplaceQuestPointsTotal;
             public int TotalFishingPontuadas;
             public int TotalCraftPontuadas;
             public int TotalFarmJackpotsPontuados;
@@ -448,7 +459,14 @@ namespace Glitnir.Ranking
 
             _harmony = new Harmony(ModGuid);
             _harmony.PatchAll();
-
+            try
+            {
+                Glitnir.Ranking.Patches.GlitnirAAACraftMaxClamp.Apply(_harmony);
+            }
+            catch (Exception e)
+            {
+                Logger.LogWarning("[Glitnir Ranking] Falha ao aplicar AAA Craft Max Clamp: " + e.Message);
+            }
 
         }
 
@@ -696,13 +714,7 @@ namespace Glitnir.Ranking
 
         private bool HasMarketplaceQuestCredit(string playerName, string questKey)
         {
-            if (_database == null || _database.MarketplaceQuestCredits == null)
-                return false;
-
-            string creditKey = BuildMarketplaceQuestCreditKey(playerName, questKey);
-            return _database.MarketplaceQuestCredits.Any(x =>
-                x != null &&
-                string.Equals(BuildMarketplaceQuestCreditKey(x.PlayerName, x.QuestKey), creditKey, StringComparison.OrdinalIgnoreCase));
+            return HasMarketplaceQuestCreditCached(playerName, questKey);
         }
 
         private void MarkMarketplaceQuestCredit(string playerName, string questKey)
@@ -1793,7 +1805,7 @@ namespace Glitnir.Ranking
         private RankingEntry GetOrCreateEntry(string playerName)
         {
             string safeName = SanitizePlayerName(playerName);
-            RankingEntry entry = _database.Entries.FirstOrDefault(x => string.Equals(x.PlayerName, safeName, StringComparison.OrdinalIgnoreCase));
+            RankingEntry entry = FindRankingEntryByName(safeName);
             if (entry != null)
                 return entry;
 
@@ -1811,6 +1823,7 @@ namespace Glitnir.Ranking
             };
 
             _database.Entries.Add(entry);
+            RegisterRankingEntry(entry);
             return entry;
         }
 
@@ -2196,7 +2209,7 @@ namespace Glitnir.Ranking
 
             return string.Join(",", rules
                 .OrderBy(x => x.Key)
-                .Select(x => FriendlyRuleNameForHud(x.Key) + ":" + x.Value)
+                .Select(x => SafeKey(x.Key) + ":" + x.Value)
                 .ToArray());
         }
 
@@ -2421,7 +2434,7 @@ namespace Glitnir.Ranking
                 .Select(x =>
                 {
                     JackpotRule rule = x.Value ?? new JackpotRule();
-                    return FriendlyRuleNameForHud(x.Key) + ":" + Mathf.Max(1, rule.RequiredAmount) + ":" + rule.Points;
+                    return SafeKey(x.Key) + ":" + Mathf.Max(1, rule.RequiredAmount) + ":" + rule.Points;
                 })
                 .ToArray());
         }
@@ -2432,6 +2445,15 @@ namespace Glitnir.Ranking
             if (string.IsNullOrWhiteSpace(key))
                 return "Regra";
 
+
+
+
+
+
+            string prefabDisplayName = GetPrefabDisplayNameForHud(key);
+            if (!string.IsNullOrWhiteSpace(prefabDisplayName) &&
+                !string.Equals(prefabDisplayName, key, StringComparison.OrdinalIgnoreCase))
+                return prefabDisplayName;
 
             string bossDisplayName;
             if (BossDisplayNamesPtBr.TryGetValue(key, out bossDisplayName) && !string.IsNullOrWhiteSpace(bossDisplayName))
@@ -2461,8 +2483,6 @@ namespace Glitnir.Ranking
             if (!string.IsNullOrWhiteSpace(manualName))
                 return manualName;
 
-
-            string prefabDisplayName = GetPrefabDisplayNameForHud(key);
             if (!string.IsNullOrWhiteSpace(prefabDisplayName))
                 return prefabDisplayName;
 
@@ -2475,68 +2495,23 @@ namespace Glitnir.Ranking
                 return "";
 
             string cleanName = CleanPrefabNameForHud(prefabName);
-
             if (string.IsNullOrWhiteSpace(cleanName))
                 return "";
 
-            string bossDisplayName;
-            if (BossDisplayNamesPtBr.TryGetValue(cleanName, out bossDisplayName) && !string.IsNullOrWhiteSpace(bossDisplayName))
-                return bossDisplayName;
-
-            string normalizedBossName;
-            if (BossPortugueseToPrefab.TryGetValue(cleanName, out normalizedBossName) &&
-                BossDisplayNamesPtBr.TryGetValue(normalizedBossName, out bossDisplayName) &&
-                !string.IsNullOrWhiteSpace(bossDisplayName))
-                return bossDisplayName;
-
-            string fishDisplayName;
-            if (FishDisplayNamesPtBr.TryGetValue(cleanName, out fishDisplayName) && !string.IsNullOrWhiteSpace(fishDisplayName))
-                return fishDisplayName;
-
-            string normalizedFishName;
-            if (FishPortugueseToPrefab.TryGetValue(cleanName, out normalizedFishName) &&
-                FishDisplayNamesPtBr.TryGetValue(normalizedFishName, out fishDisplayName) &&
-                !string.IsNullOrWhiteSpace(fishDisplayName))
-                return fishDisplayName;
-
             string cachedName;
-            if (_hudPrefabDisplayNameCache.TryGetValue(cleanName, out cachedName))
+            if (_hudPrefabDisplayNameCache.TryGetValue(cleanName, out cachedName) && !string.IsNullOrWhiteSpace(cachedName))
                 return cachedName;
 
             string resolvedName = "";
+            bool safeToCache = false;
 
             try
             {
                 GameObject prefab = ResolvePrefabForHud(cleanName);
-
                 if (prefab != null)
                 {
-                    ItemDrop itemDrop = prefab.GetComponent<ItemDrop>();
-                    if (itemDrop != null && itemDrop.m_itemData.m_shared != null)
-                    {
-                        string tokenOrName = itemDrop.m_itemData.m_shared.m_name;
-                        if (!string.IsNullOrWhiteSpace(tokenOrName))
-                        {
-                            string manualName = TryManualPortugueseNameForHud(tokenOrName);
-                            if (string.IsNullOrWhiteSpace(manualName))
-                                manualName = TryManualPortugueseNameForHud(cleanName);
-
-                            if (!string.IsNullOrWhiteSpace(manualName))
-                            {
-                                resolvedName = manualName;
-                            }
-                            else
-                            {
-                                string localized = TryLocalizeTokenForHud(tokenOrName);
-                                localized = StripRichText(localized).Trim();
-
-                                if (!string.IsNullOrWhiteSpace(localized) && localized != tokenOrName)
-                                    resolvedName = localized;
-                                else
-                                    resolvedName = HumanizePrefabNamePt(cleanName);
-                            }
-                        }
-                    }
+                    resolvedName = TryGetLocalizedPrefabNameForHud(prefab, cleanName);
+                    safeToCache = !string.IsNullOrWhiteSpace(resolvedName);
                 }
             }
             catch (Exception ex)
@@ -2545,15 +2520,161 @@ namespace Glitnir.Ranking
                     Log.LogWarning("[Glitnir Ranking] Falha ao localizar nome do prefab '" + prefabName + "': " + ex.Message);
             }
 
+
+
+            if (string.IsNullOrWhiteSpace(resolvedName))
+            {
+                string bossDisplayName;
+                if (BossDisplayNamesPtBr.TryGetValue(cleanName, out bossDisplayName) && !string.IsNullOrWhiteSpace(bossDisplayName))
+                {
+                    resolvedName = bossDisplayName;
+                    safeToCache = true;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedName))
+            {
+                string normalizedBossName;
+                string bossDisplayName;
+                if (BossPortugueseToPrefab.TryGetValue(cleanName, out normalizedBossName) &&
+                    BossDisplayNamesPtBr.TryGetValue(normalizedBossName, out bossDisplayName) &&
+                    !string.IsNullOrWhiteSpace(bossDisplayName))
+                {
+                    resolvedName = bossDisplayName;
+                    safeToCache = true;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedName))
+            {
+                string fishDisplayName;
+                if (FishDisplayNamesPtBr.TryGetValue(cleanName, out fishDisplayName) && !string.IsNullOrWhiteSpace(fishDisplayName))
+                {
+                    resolvedName = fishDisplayName;
+                    safeToCache = true;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedName))
+            {
+                string normalizedFishName;
+                string fishDisplayName;
+                if (FishPortugueseToPrefab.TryGetValue(cleanName, out normalizedFishName) &&
+                    FishDisplayNamesPtBr.TryGetValue(normalizedFishName, out fishDisplayName) &&
+                    !string.IsNullOrWhiteSpace(fishDisplayName))
+                {
+                    resolvedName = fishDisplayName;
+                    safeToCache = true;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(resolvedName))
+            {
+                string friendly;
+                if (HudFriendlyNames.TryGetValue(cleanName, out friendly) && !string.IsNullOrWhiteSpace(friendly))
+                {
+                    resolvedName = friendly;
+                    safeToCache = true;
+                }
+            }
+
             if (string.IsNullOrWhiteSpace(resolvedName))
             {
                 string manualName = TryManualPortugueseNameForHud(cleanName);
-                resolvedName = !string.IsNullOrWhiteSpace(manualName) ? manualName : HumanizePrefabNamePt(cleanName);
+                if (!string.IsNullOrWhiteSpace(manualName))
+                {
+                    resolvedName = manualName;
+                    safeToCache = true;
+                }
             }
 
+            if (string.IsNullOrWhiteSpace(resolvedName))
+            {
 
-            _hudPrefabDisplayNameCache[cleanName] = resolvedName;
+
+
+                return HumanizePrefabNamePt(cleanName);
+            }
+
+            if (safeToCache)
+                _hudPrefabDisplayNameCache[cleanName] = resolvedName;
+
             return resolvedName;
+        }
+
+
+        private string TryGetLocalizedPrefabNameForHud(GameObject prefab, string fallbackPrefabName)
+        {
+            if (prefab == null)
+                return "";
+
+            string rawName = "";
+
+            try
+            {
+                ItemDrop itemDrop = prefab.GetComponent<ItemDrop>();
+                if (itemDrop != null &&
+                    itemDrop.m_itemData != null &&
+                    itemDrop.m_itemData.m_shared != null &&
+                    !string.IsNullOrWhiteSpace(itemDrop.m_itemData.m_shared.m_name))
+                {
+                    rawName = itemDrop.m_itemData.m_shared.m_name;
+                }
+
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    Character character = prefab.GetComponent<Character>();
+                    if (character != null && !string.IsNullOrWhiteSpace(character.m_name))
+                        rawName = character.m_name;
+                }
+
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    Piece piece = prefab.GetComponent<Piece>();
+                    if (piece != null && !string.IsNullOrWhiteSpace(piece.m_name))
+                        rawName = piece.m_name;
+                }
+
+                if (string.IsNullOrWhiteSpace(rawName))
+                {
+                    Pickable pickable = prefab.GetComponent<Pickable>();
+                    if (pickable != null && pickable.m_itemPrefab != null)
+                    {
+                        ItemDrop pickableItem = pickable.m_itemPrefab.GetComponent<ItemDrop>();
+                        if (pickableItem != null &&
+                            pickableItem.m_itemData != null &&
+                            pickableItem.m_itemData.m_shared != null &&
+                            !string.IsNullOrWhiteSpace(pickableItem.m_itemData.m_shared.m_name))
+                        {
+                            rawName = pickableItem.m_itemData.m_shared.m_name;
+                        }
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(rawName))
+                    return "";
+
+                string localized = TryLocalizeTokenForHud(rawName);
+
+                if (string.IsNullOrWhiteSpace(localized))
+                    return "";
+
+                localized = localized.Trim();
+
+
+
+                if (localized.StartsWith("$", StringComparison.Ordinal))
+                    localized = HumanizeTokenNameForHud(localized);
+
+                if (string.IsNullOrWhiteSpace(localized) || localized == fallbackPrefabName)
+                    return localized;
+
+                return localized;
+            }
+            catch
+            {
+                return "";
+            }
         }
 
         private GameObject ResolvePrefabForHud(string cleanName)
@@ -2701,6 +2822,7 @@ namespace Glitnir.Ranking
                     if (_hudLocalizationType != null)
                     {
                         _hudLocalizationInstanceField = AccessTools.Field(_hudLocalizationType, "instance");
+                        _hudLocalizationInstanceProperty = AccessTools.Property(_hudLocalizationType, "instance");
                         _hudLocalizationLocalizeMethod = AccessTools.Method(_hudLocalizationType, "Localize", new Type[] { typeof(string) });
 
                         if (_hudLocalizationLocalizeMethod == null)
@@ -2723,10 +2845,14 @@ namespace Glitnir.Ranking
                     }
                 }
 
-                if (_hudLocalizationType == null || _hudLocalizationInstanceField == null || _hudLocalizationLocalizeMethod == null)
+                if (_hudLocalizationType == null || (_hudLocalizationInstanceField == null && _hudLocalizationInstanceProperty == null) || _hudLocalizationLocalizeMethod == null)
                     return tokenOrName;
 
-                object instance = _hudLocalizationInstanceField.GetValue(null);
+                object instance = null;
+                if (_hudLocalizationInstanceField != null)
+                    instance = _hudLocalizationInstanceField.GetValue(null);
+                if (instance == null && _hudLocalizationInstanceProperty != null)
+                    instance = _hudLocalizationInstanceProperty.GetValue(null, null);
                 if (instance == null)
                     return tokenOrName;
 
@@ -3033,7 +3159,7 @@ namespace Glitnir.Ranking
             {
                 { "Fish1", "Perca" },
                 { "Fish2", "Lúcio" },
-                { "Fish3", "Fish3" },
+                { "Fish3", "Atum" },
                 { "Fish4_cave", "Tetra" },
                 { "Fish5", "Peixe Troll" },
                 { "Fish6", "Arenque gigante" },
@@ -3052,6 +3178,7 @@ namespace Glitnir.Ranking
                 { "Lúcio", "Fish2" },
                 { "Lucio", "Fish2" },
                 { "Fish3", "Fish3" },
+                { "Atum", "Fish3" },
                 { "Tetra", "Fish4_cave" },
                 { "Peixe Troll", "Fish5" },
                 { "Arenque gigante", "Fish6" },
@@ -3119,7 +3246,7 @@ namespace Glitnir.Ranking
 
                 { "Fish1", "Perca" },
                 { "Fish2", "Lúcio" },
-                { "Fish3", "Fish3" },
+                { "Fish3", "Atum" },
                 { "Fish4_cave", "Tetra" },
                 { "Fish5", "Peixe Troll" },
                 { "Fish6", "Arenque gigante" },
@@ -3318,7 +3445,7 @@ namespace Glitnir.Ranking
                 if (recipe == null)
                     return;
 
-                GlitnirRankingPlugin.Instance.NotifyLocalCraftedRecipe(recipe);
+                GlitnirRankingPlugin.Instance.NotifyLocalCraftingStarted(recipe);
             }
             catch (Exception ex)
             {
@@ -3600,7 +3727,10 @@ namespace Glitnir.Ranking
         public int RewardTop3Amount = 5;
         public bool PointsExchangeEnabled = true;
         public string PointsExchangePrefab = "Coins";
+        public bool PointsExchangeUseCoinsPerPoint = false;
         public int PointsExchangeCoinsPerPoint = 1;
+        public bool PointsExchangeUsePointsPerCoin = true;
+        public int PointsExchangePointsPerCoin = 100;
         public int PointsExchangeMinPoints = 1;
         public int PointsExchangeMaxPointsPerRequest = 0;
         public Dictionary<string, int> KillPoints = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);

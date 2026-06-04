@@ -295,37 +295,84 @@ namespace Glitnir.Ranking
                     return false;
                 }
 
-                ItemDrop.ItemData addedItem = inventory.AddItem(
-                    prefabName,
-                    Mathf.Max(1, amount),
-                    Mathf.Max(1, itemDrop.m_itemData.m_quality),
-                    Mathf.Max(0, itemDrop.m_itemData.m_variant),
-                    0L,
-                    "");
+                int remaining = Mathf.Max(0, amount);
+                int addedToInventory = 0;
+                int droppedOnGround = 0;
 
-                if (addedItem == null)
+                int quality = 1;
+                int variant = 0;
+                int maxStackSize = 1;
+                string itemName = prefabName;
+
+                if (itemDrop.m_itemData != null)
                 {
-                    message = "Inventário sem espaço suficiente.";
+                    quality = Mathf.Max(1, itemDrop.m_itemData.m_quality);
+                    variant = Mathf.Max(0, itemDrop.m_itemData.m_variant);
+
+                    if (itemDrop.m_itemData.m_shared != null)
+                    {
+                        maxStackSize = Mathf.Max(1, itemDrop.m_itemData.m_shared.m_maxStackSize);
+
+                        if (!string.IsNullOrWhiteSpace(itemDrop.m_itemData.m_shared.m_name))
+                            itemName = itemDrop.m_itemData.m_shared.m_name;
+                    }
+                }
+
+                while (remaining > 0)
+                {
+                    int stackAmount = Mathf.Min(maxStackSize, remaining);
+
+                    ItemDrop.ItemData addedItem = inventory.AddItem(
+                        prefabName,
+                        stackAmount,
+                        quality,
+                        variant,
+                        0L,
+                        "");
+
+                    if (addedItem == null)
+                        break;
+
+                    addedToInventory += stackAmount;
+                    remaining -= stackAmount;
+                }
+
+                if (remaining > 0)
+                {
+                    droppedOnGround = DropExchangeItemOverflowNearPlayer(itemPrefab, itemDrop, remaining, maxStackSize, quality, variant);
+                    remaining -= droppedOnGround;
+                }
+
+                if (remaining > 0)
+                {
+                    message = "Não foi possível entregar toda a recompensa.";
                     return false;
                 }
 
-                string itemName = itemDrop.m_itemData != null && itemDrop.m_itemData.m_shared != null
-                    ? itemDrop.m_itemData.m_shared.m_name
-                    : prefabName;
-
                 try
                 {
-                    Player.m_localPlayer.Message(MessageHud.MessageType.Center, "Recompensa recebida: " + itemName + " x" + amount);
+                    if (droppedOnGround > 0 && addedToInventory > 0)
+                        Player.m_localPlayer.Message(MessageHud.MessageType.Center, "Recompensa recebida: " + itemName + " x" + addedToInventory + " no inventário, x" + droppedOnGround + " no chão.");
+                    else if (droppedOnGround > 0)
+                        Player.m_localPlayer.Message(MessageHud.MessageType.Center, "Inventário cheio. Recompensa caiu no chão: " + itemName + " x" + droppedOnGround + ".");
+                    else
+                        Player.m_localPlayer.Message(MessageHud.MessageType.Center, "Recompensa recebida: " + itemName + " x" + addedToInventory + ".");
                 }
                 catch { }
 
-                message = "Recompensa recebida: " + itemName + " x" + amount;
+                if (droppedOnGround > 0 && addedToInventory > 0)
+                    message = "Parte da recompensa foi para o inventário e o restante caiu no chão.";
+                else if (droppedOnGround > 0)
+                    message = "Inventário cheio: a recompensa caiu no chão.";
+                else
+                    message = "Recompensa adicionada ao inventário.";
+
                 return true;
             }
             catch (Exception ex)
             {
-                Logger.LogError("Erro ao adicionar recompensa no inventário: " + ex);
-                message = "Erro ao adicionar item no inventário.";
+                Logger.LogError("Erro ao entregar recompensa: " + ex);
+                message = "Erro ao entregar recompensa.";
                 return false;
             }
         }

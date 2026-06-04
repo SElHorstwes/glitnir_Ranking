@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -21,18 +21,40 @@ namespace Glitnir.Ranking
                 {
                     _lastKnownServerPeerUid = 0L;
                     _requestedInitialServerSnapshot = false;
+                    _lastSnapshotSyncPlayerName = "";
+                    _lastSnapshotHadLocalPlayer = false;
                     return;
                 }
 
-                if (serverUid != _lastKnownServerPeerUid)
+                bool hasLocalPlayer = Player.m_localPlayer != null;
+                string localPlayerName = hasLocalPlayer ? GetLocalPlayerName() : "";
+
+                if (!hasLocalPlayer)
+                {
+
+
+
+                    _requestedInitialServerSnapshot = false;
+                    _lastSnapshotSyncPlayerName = "";
+                    _lastSnapshotHadLocalPlayer = false;
+                    return;
+                }
+
+                bool serverChanged = serverUid != _lastKnownServerPeerUid;
+                bool playerChanged = !string.Equals(localPlayerName, _lastSnapshotSyncPlayerName, StringComparison.OrdinalIgnoreCase);
+                bool playerReappeared = !_lastSnapshotHadLocalPlayer && hasLocalPlayer;
+
+                if (serverChanged || playerChanged || playerReappeared)
                 {
                     _lastKnownServerPeerUid = serverUid;
+                    _lastSnapshotSyncPlayerName = localPlayerName;
+                    _lastSnapshotHadLocalPlayer = true;
                     _requestedInitialServerSnapshot = false;
                     _cachedTopText = "Sincronizando ranking...";
                     _cachedPlayerText = "Aguardando dados do servidor...";
                 }
 
-                if (!_requestedInitialServerSnapshot && Player.m_localPlayer != null)
+                if (!_requestedInitialServerSnapshot)
                 {
                     _requestedInitialServerSnapshot = true;
                     _clientRefreshTimer = 0f;
@@ -47,30 +69,7 @@ namespace Glitnir.Ranking
 
         private Dictionary<string, int> GetRankingSnapshot()
         {
-            Dictionary<string, int> snapshot = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-
-            if (_database == null || _database.Entries == null)
-                return snapshot;
-
-            List<RankingEntry> ordered = _database.Entries
-                .Where(x => x != null && !string.IsNullOrWhiteSpace(x.PlayerName) && !ShouldIgnorePlayerForRanking(x.PlayerName))
-                .OrderByDescending(x => x.Points)
-                .ThenByDescending(x => x.BossPointsTotal)
-                .ThenByDescending(x => x.KillPointsTotal)
-                .ThenByDescending(x => x.SkillPointsTotal)
-                .ThenBy(x => x.PlayerName)
-                .ToList();
-
-            for (int i = 0; i < ordered.Count; i++)
-            {
-                RankingEntry rankedEntry = ordered[i];
-                if (rankedEntry == null || string.IsNullOrWhiteSpace(rankedEntry.PlayerName))
-                    continue;
-
-                snapshot[rankedEntry.PlayerName] = i + 1;
-            }
-
-            return snapshot;
+            return GetRankingSnapshotFromCache();
         }
 
         private void RequestSnapshotFromServer()
@@ -209,14 +208,7 @@ namespace Glitnir.Ranking
                 return;
             }
 
-            List<RankingEntry> ordered = _database.Entries
-                .Where(x => x != null && !string.IsNullOrWhiteSpace(x.PlayerName) && !ShouldIgnorePlayerForRanking(x.PlayerName))
-                .OrderByDescending(x => x.Points)
-                .ThenByDescending(x => x.BossPointsTotal)
-                .ThenByDescending(x => x.KillPointsTotal)
-                .ThenByDescending(x => x.SkillPointsTotal)
-                .ThenBy(x => x.PlayerName)
-                .ToList();
+            IReadOnlyList<RankingEntry> ordered = GetOrderedRankingEntries();
 
             playerName = SanitizePlayerName(playerName);
             int limit = Mathf.Min(Mathf.Clamp(_rules.TopCount, 1, 50), ordered.Count);
@@ -233,6 +225,8 @@ namespace Glitnir.Ranking
                     TotalKillsPontuadas = entry != null ? entry.TotalKillsPontuadas : 0,
                     TotalBossesPontuadas = entry != null ? entry.TotalBossesPontuadas : 0,
                     TotalSkillLevelUpsPontuados = entry != null ? entry.TotalSkillLevelUpsPontuados : 0,
+                    TotalMarketplaceQuestsPontuadas = entry != null ? CountMarketplaceQuestCreditsForPlayer(entry.PlayerName) : 0,
+                    MarketplaceQuestPointsTotal = entry != null ? CalculateMarketplaceQuestPointsForPlayer(entry.PlayerName) : 0,
                     TotalFishingPontuadas = entry != null ? entry.TotalFishingPontuadas : 0,
                     TotalCraftPontuadas = entry != null ? entry.TotalCraftPontuadas : 0,
                     TotalFarmJackpotsPontuados = entry != null ? entry.TotalFarmJackpotsPontuados : 0,
@@ -271,6 +265,8 @@ namespace Glitnir.Ranking
                 playerData.TotalKillsPontuadas = entry.TotalKillsPontuadas;
                 playerData.TotalBossesPontuadas = entry.TotalBossesPontuadas;
                 playerData.TotalSkillLevelUpsPontuados = entry.TotalSkillLevelUpsPontuados;
+                playerData.TotalMarketplaceQuestsPontuadas = CountMarketplaceQuestCreditsForPlayer(entry.PlayerName);
+                playerData.MarketplaceQuestPointsTotal = CalculateMarketplaceQuestPointsForPlayer(entry.PlayerName);
                 playerData.KillPointsTotal = entry.KillPointsTotal;
                 playerData.BossPointsTotal = entry.BossPointsTotal;
                 playerData.SkillPointsTotal = entry.SkillPointsTotal;
@@ -293,6 +289,8 @@ namespace Glitnir.Ranking
                 playerData.ProgressCounters = entry.ProgressCounters != null
                     ? new Dictionary<string, int>(entry.ProgressCounters, StringComparer.OrdinalIgnoreCase)
                     : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                EnsureFishingProgressCountersFromCredits(playerData.PlayerName, playerData.ProgressCounters);
+                EnsureMarketplaceQuestProgressCountersFromCredits(playerData.PlayerName, playerData.ProgressCounters);
                 playerData.FloatProgressCounters = entry.FloatProgressCounters != null
                     ? new Dictionary<string, float>(entry.FloatProgressCounters, StringComparer.OrdinalIgnoreCase)
                     : new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
@@ -301,6 +299,139 @@ namespace Glitnir.Ranking
             }
 
             FillRewardSnapshotData(playerData);
+        }
+
+        private int CountMarketplaceQuestCreditsForPlayer(string playerName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(playerName) || _database == null || _database.MarketplaceQuestCredits == null)
+                    return 0;
+
+                return GetMarketplaceQuestCreditsForPlayer(playerName).Count;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private int CalculateMarketplaceQuestPointsForPlayer(string playerName)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(playerName) || _database == null || _database.MarketplaceQuestCredits == null || _rules == null || _rules.MarketplaceQuestPoints == null)
+                    return 0;
+
+                int total = 0;
+                List<MarketplaceQuestCreditRecord> credits = GetMarketplaceQuestCreditsForPlayer(playerName);
+
+                for (int i = 0; i < credits.Count; i++)
+                {
+                    MarketplaceQuestCreditRecord credit = credits[i];
+                    if (credit == null)
+                        continue;
+
+                    int points;
+                    if (_rules.MarketplaceQuestPoints.TryGetValue(SafeMarketplaceQuestKey(credit.QuestKey), out points))
+                        total = Mathf.Clamp(total + Mathf.Max(0, points), 0, int.MaxValue);
+                }
+
+                return total;
+            }
+            catch
+            {
+                return 0;
+            }
+        }
+
+        private void EnsureMarketplaceQuestProgressCountersFromCredits(string playerName, Dictionary<string, int> counters)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(playerName) || counters == null || _database == null || _database.MarketplaceQuestCredits == null)
+                    return;
+
+                Dictionary<string, int> countsByQuest = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+                List<MarketplaceQuestCreditRecord> credits = GetMarketplaceQuestCreditsForPlayer(playerName);
+
+                for (int i = 0; i < credits.Count; i++)
+                {
+                    MarketplaceQuestCreditRecord credit = credits[i];
+                    if (credit == null)
+                        continue;
+
+                    string questKey = SafeMarketplaceQuestKey(credit.QuestKey);
+                    if (string.IsNullOrWhiteSpace(questKey))
+                        continue;
+
+                    int current = 0;
+                    countsByQuest.TryGetValue(questKey, out current);
+                    countsByQuest[questKey] = Mathf.Clamp(current + 1, 0, int.MaxValue);
+                }
+
+                foreach (KeyValuePair<string, int> pair in countsByQuest)
+                {
+                    SetProgressCounterMinimum(counters, "MarketplaceQuest", pair.Key, pair.Value);
+                    SetProgressCounterMinimum(counters, "Marketplace", pair.Key, pair.Value);
+                    SetProgressCounterMinimum(counters, "Quest", pair.Key, pair.Value);
+                    SetProgressCounterMinimum(counters, "Quests", pair.Key, pair.Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Erro ao reconstruir contagem de quests Marketplace no snapshot: " + ex);
+            }
+        }
+
+        private void EnsureFishingProgressCountersFromCredits(string playerName, Dictionary<string, int> counters)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(playerName) || counters == null || _database == null || _database.FishingCatchCredits == null)
+                    return;
+
+                Dictionary<string, int> countsByFish = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+
+                for (int i = 0; i < _database.FishingCatchCredits.Count; i++)
+                {
+                    FishingCatchCreditRecord credit = _database.FishingCatchCredits[i];
+                    if (credit == null)
+                        continue;
+
+                    if (!string.Equals(SanitizePlayerName(credit.PlayerName), SanitizePlayerName(playerName), StringComparison.OrdinalIgnoreCase))
+                        continue;
+
+                    string fishPrefab = NormalizeFishPrefabName(credit.FishPrefab);
+                    if (string.IsNullOrWhiteSpace(fishPrefab) || !IsFishPrefab(fishPrefab))
+                        continue;
+
+                    int current = 0;
+                    countsByFish.TryGetValue(fishPrefab, out current);
+                    countsByFish[fishPrefab] = Mathf.Clamp(current + 1, 0, int.MaxValue);
+                }
+
+                foreach (KeyValuePair<string, int> pair in countsByFish)
+                {
+                    SetProgressCounterMinimum(counters, "Fishing", pair.Key, pair.Value);
+                    SetProgressCounterMinimum(counters, "Pesca", pair.Key, pair.Value);
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError("Erro ao reconstruir contagem de pesca no snapshot: " + ex);
+            }
+        }
+
+        private void SetProgressCounterMinimum(Dictionary<string, int> counters, string category, string key, int value)
+        {
+            if (counters == null || string.IsNullOrWhiteSpace(category) || string.IsNullOrWhiteSpace(key) || value <= 0)
+                return;
+
+            string progressKey = SafeKey(category) + ":" + SafeKey(key);
+            int current = 0;
+            counters.TryGetValue(progressKey, out current);
+            counters[progressKey] = Mathf.Clamp(Mathf.Max(current, value), 0, int.MaxValue);
         }
 
         private void WriteSnapshotPayload(ZPackage response, List<SnapshotTopEntryData> topEntries, SnapshotPlayerData playerData)
@@ -340,6 +471,8 @@ namespace Glitnir.Ranking
                 response.Write(entry.ExplorationMapJackpotPointsTotal);
                 response.Write(entry.LastReason ?? "");
                 response.Write(entry.LastUpdateUtc ?? "");
+                response.Write(entry.TotalMarketplaceQuestsPontuadas);
+                response.Write(entry.MarketplaceQuestPointsTotal);
             }
 
             SnapshotPlayerData data = playerData ?? new SnapshotPlayerData();
@@ -400,6 +533,8 @@ namespace Glitnir.Ranking
             response.Write(Mathf.Max(0, data.DeathPenaltyPerDeath));
             response.Write(SerializeStringIntDictionary(data.ProgressCounters));
             response.Write(SerializeStringFloatDictionary(data.FloatProgressCounters));
+            response.Write(data.TotalMarketplaceQuestsPontuadas);
+            response.Write(data.MarketplaceQuestPointsTotal);
         }
 
         private void ReadSnapshotPayload(ZPackage pkg)
@@ -442,6 +577,8 @@ namespace Glitnir.Ranking
                 try { entry.ExplorationMapJackpotPointsTotal = pkg.ReadInt(); } catch { }
                 try { entry.LastReason = pkg.ReadString(); } catch { }
                 try { entry.LastUpdateUtc = pkg.ReadString(); } catch { }
+                try { entry.TotalMarketplaceQuestsPontuadas = pkg.ReadInt(); } catch { }
+                try { entry.MarketplaceQuestPointsTotal = pkg.ReadInt(); } catch { }
                 _cachedTopEntries.Add(entry);
             }
 
@@ -503,6 +640,8 @@ namespace Glitnir.Ranking
             try { data.DeathPenaltyPerDeath = Mathf.Max(0, pkg.ReadInt()); } catch { data.DeathPenaltyPerDeath = Mathf.Max(0, _rules.DeathPenaltyPerDeath); }
             try { data.ProgressCounters = DeserializeStringIntDictionary(pkg.ReadString()); } catch { data.ProgressCounters = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase); }
             try { data.FloatProgressCounters = DeserializeStringFloatDictionary(pkg.ReadString()); } catch { data.FloatProgressCounters = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase); }
+            try { data.TotalMarketplaceQuestsPontuadas = pkg.ReadInt(); } catch { }
+            try { data.MarketplaceQuestPointsTotal = pkg.ReadInt(); } catch { }
 
             _cachedPlayerData = data;
         }
@@ -516,14 +655,7 @@ namespace Glitnir.Ranking
                 return;
             }
 
-            List<RankingEntry> ordered = _database.Entries
-                .Where(x => x != null && !string.IsNullOrWhiteSpace(x.PlayerName) && !ShouldIgnorePlayerForRanking(x.PlayerName))
-                .OrderByDescending(x => x.Points)
-                .ThenByDescending(x => x.BossPointsTotal)
-                .ThenByDescending(x => x.KillPointsTotal)
-                .ThenByDescending(x => x.SkillPointsTotal)
-                .ThenBy(x => x.PlayerName)
-                .ToList();
+            IReadOnlyList<RankingEntry> ordered = GetOrderedRankingEntries();
 
             int topCount = Mathf.Clamp(_rules.TopCount, 1, 50);
             playerName = SanitizePlayerName(playerName);

@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Configuration;
 using BepPaths = BepInEx.Paths;
@@ -29,7 +29,7 @@ namespace Glitnir.Ranking
             playerName = SanitizePlayerName(playerName);
             if (ShouldIgnorePlayerForRanking(playerName))
             {
-                DebugLog(DebugCategory.Points, "Pontuação ignorada para admin: " + playerName + " motivo=" + reason);
+                DebugLog(DebugCategory.Points, "PontuaÃ§Ã£o ignorada para admin: " + playerName + " motivo=" + reason);
                 return;
             }
 
@@ -44,7 +44,7 @@ namespace Glitnir.Ranking
 
             if (ShouldIgnorePlayerForRanking(entry.PlayerName))
             {
-                DebugLog(DebugCategory.Points, "Pontuação ignorada para admin: " + entry.PlayerName + " motivo=" + reason);
+                DebugLog(DebugCategory.Points, "PontuaÃ§Ã£o ignorada para admin: " + entry.PlayerName + " motivo=" + reason);
                 return;
             }
 
@@ -55,12 +55,13 @@ namespace Glitnir.Ranking
             entry.Points = Mathf.Clamp(entry.Points + amount, -int.MaxValue, int.MaxValue);
             entry.LastReason = SafeReason(reason);
             entry.LastUpdateUtc = DateTime.UtcNow.ToString("O");
+            RegisterRankingEntry(entry);
 
             Dictionary<string, int> newRanks = IsServerInstance()
                 ? GetRankingSnapshot()
                 : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
-            DebugLog(DebugCategory.Points, "Pontuação alterada: player=" + entry.PlayerName + " amount=" + amount + " total=" + entry.Points + " motivo=" + entry.LastReason);
+            DebugLog(DebugCategory.Points, "PontuaÃ§Ã£o alterada: player=" + entry.PlayerName + " amount=" + amount + " total=" + entry.Points + " motivo=" + entry.LastReason);
 
 
             if (IsServerInstance())

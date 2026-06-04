@@ -1,4 +1,4 @@
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Logging;
 using BepInEx.Configuration;
 using BepPaths = BepInEx.Paths;
@@ -819,7 +819,7 @@ namespace Glitnir.Ranking
         }
 
         private const float ActionPlayerCollapsedHeight = 58f;
-        private const float ActionPlayerExpandedHeight = 650f;
+        private const float ActionPlayerExpandedHeight = 738f;
 
         private float GetActionsContentHeight(float width)
         {
@@ -970,6 +970,7 @@ namespace Glitnir.Ranking
                 string summary = ColorizeDanger(entry.TotalKillsPontuadas + " kills") + "  •  " +
                                  ColorizeDanger(entry.TotalBossesPontuadas + " bosses") + "  •  " +
                                  ColorizeProgress(entry.TotalSkillLevelUpsPontuados + " skills") + "  •  " +
+                                 ColorizeHighlight(entry.TotalMarketplaceQuestsPontuadas + " quests") + "  •  " +
                                  ColorizeProgress(entry.TotalCraftPontuadas + " crafts") + "  •  " +
                                  ColorizeDanger(entry.TotalPointsExchanges + " câmbios");
                 DrawShadowLabel(new Rect(headerRect.x + 32f, headerRect.y + 27f, headerRect.width - 48f, 16f), summary, _mutedBodyStyle);
@@ -994,6 +995,11 @@ namespace Glitnir.Ranking
             contentY += sectionH + sectionGap;
 
             DrawExplorationActionCard(new Rect(contentX, contentY, contentW, sectionH), accent, entry);
+            contentY += sectionH + sectionGap;
+
+            DrawActionSectionCard(new Rect(contentX, contentY, contentW, sectionH), "QUESTS MARKETPLACE", accent,
+                "Quests", entry.TotalMarketplaceQuestsPontuadas + " concluídas", entry.MarketplaceQuestPointsTotal,
+                "Tipo", "Marketplace", 0);
             contentY += sectionH + sectionGap;
 
             DrawActionSectionCard(new Rect(contentX, contentY, contentW, sectionH), "ECONOMIA", accent,
@@ -1251,24 +1257,26 @@ namespace Glitnir.Ranking
             DrawPlayerSummaryBlock(new Rect(x, y, width, 58f));
             y += 80f;
 
-            y = DrawPerformanceBlock(new Rect(x, y, width, 10f), "Resumo da jornada", "Resumo", "Sua atividade principal registrada no ranking.", 108f, contentRect =>
+            y = DrawPerformanceBlock(new Rect(x, y, width, 10f), "Resumo da jornada", "Resumo", "Sua atividade principal registrada no ranking.", 134f, contentRect =>
             {
                 DrawSimpleInfoRows(contentRect, new string[]
                 {
                     "Kills pontuadas|" + _cachedPlayerData.TotalKillsPontuadas,
                     "Bosses pontuados|" + _cachedPlayerData.TotalBossesPontuadas,
                     "Níveis de skill|" + _cachedPlayerData.TotalSkillLevelUpsPontuados,
+                    "Quests Marketplace|" + _cachedPlayerData.TotalMarketplaceQuestsPontuadas,
                     "Câmbios realizados|" + _cachedPlayerData.TotalPointsExchanges
                 });
             });
 
-            y = DrawPerformanceBlock(new Rect(x, y, width, 10f), "Origem dos pontos", "Origem", "Veja quais caminhos estão sustentando sua posição.", 304f, contentRect =>
+            y = DrawPerformanceBlock(new Rect(x, y, width, 10f), "Origem dos pontos", "Origem", "Veja quais caminhos estão sustentando sua posição.", 330f, contentRect =>
             {
                 DrawSimpleInfoRows(contentRect, new string[]
                 {
                     "Pontos por kills|" + _cachedPlayerData.KillPointsTotal,
                     "Pontos por bosses|" + _cachedPlayerData.BossPointsTotal,
                     "Pontos por skills|" + _cachedPlayerData.SkillPointsTotal,
+                    "Pontos por quests|" + _cachedPlayerData.MarketplaceQuestPointsTotal,
                     "Pontos por pesca|" + _cachedPlayerData.FishingPointsTotal,
                     "Pontos por craft|" + _cachedPlayerData.CraftPointsTotal,
                     "Pontos por cultivo|" + _cachedPlayerData.FarmJackpotPointsTotal,
@@ -1637,12 +1645,21 @@ namespace Glitnir.Ranking
             else if (string.Equals(categoryKey, "Bosses", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(categoryKey, "Chefes", StringComparison.OrdinalIgnoreCase))
             {
-                keys = new string[] { "Bosses:" + safePrefab };
+                string normalizedBossPrefab = NormalizeBossPrefabName(safePrefab);
+                keys = string.Equals(normalizedBossPrefab, safePrefab, StringComparison.OrdinalIgnoreCase)
+                    ? new string[] { "Bosses:" + safePrefab }
+                    : new string[] { "Bosses:" + safePrefab, "Bosses:" + normalizedBossPrefab };
             }
             else if (string.Equals(categoryKey, "Pesca", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(categoryKey, "Fishing", StringComparison.OrdinalIgnoreCase))
             {
                 keys = new string[] { "Fishing:" + safePrefab, "Pesca:" + safePrefab };
+            }
+            else if (string.Equals(categoryKey, "Quests", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(categoryKey, "Quest", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(categoryKey, "Marketplace", StringComparison.OrdinalIgnoreCase))
+            {
+                keys = new string[] { "MarketplaceQuest:" + safePrefab, "Marketplace:" + safePrefab, "Quest:" + safePrefab, "Quests:" + safePrefab };
             }
             else if (string.Equals(categoryKey, "Cultivo", StringComparison.OrdinalIgnoreCase))
             {
@@ -1667,15 +1684,34 @@ namespace Glitnir.Ranking
             }
 
 
-            string suffix = ":" + safePrefab;
+            string[] suffixes;
+            if (string.Equals(categoryKey, "Bosses", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(categoryKey, "Chefes", StringComparison.OrdinalIgnoreCase))
+            {
+                string normalizedBossPrefab = NormalizeBossPrefabName(safePrefab);
+                suffixes = string.Equals(normalizedBossPrefab, safePrefab, StringComparison.OrdinalIgnoreCase)
+                    ? new string[] { ":" + safePrefab }
+                    : new string[] { ":" + safePrefab, ":" + normalizedBossPrefab };
+            }
+            else
+            {
+                suffixes = new string[] { ":" + safePrefab };
+            }
+
             int fallback = 0;
             foreach (KeyValuePair<string, int> pair in data.ProgressCounters)
             {
                 if (string.IsNullOrWhiteSpace(pair.Key))
                     continue;
 
-                if (pair.Key.EndsWith(suffix, StringComparison.OrdinalIgnoreCase))
-                    fallback = Mathf.Clamp(fallback + Mathf.Max(0, pair.Value), 0, int.MaxValue);
+                for (int i = 0; i < suffixes.Length; i++)
+                {
+                    if (pair.Key.EndsWith(suffixes[i], StringComparison.OrdinalIgnoreCase))
+                    {
+                        fallback = Mathf.Clamp(fallback + Mathf.Max(0, pair.Value), 0, int.MaxValue);
+                        break;
+                    }
+                }
             }
 
             return fallback;
@@ -1817,26 +1853,60 @@ namespace Glitnir.Ranking
         private List<RuleGuideGroup> BuildRuleGuideGroups(string categoryKey, string rules, bool applySearchFilter)
         {
             Dictionary<string, RuleGuideGroup> map = new Dictionary<string, RuleGuideGroup>(StringComparer.OrdinalIgnoreCase);
+            List<RuleGuideGroup> manualOrder = new List<RuleGuideGroup>();
             List<string> rows = SplitRulesForHud(rules);
+
+            string currentManualGroup = string.Empty;
+            bool hasManualHudHeaders = false;
 
             for (int i = 0; i < rows.Count; i++)
             {
                 string row = rows[i] ?? "";
+
                 if (IsHudCategoryHeader(row))
+                {
+                    currentManualGroup = GetHudCategoryHeaderTitle(row);
+                    if (string.IsNullOrWhiteSpace(currentManualGroup))
+                        currentManualGroup = "Outros";
+
+                    hasManualHudHeaders = true;
+
+                    RuleGuideGroup headerGroup;
+                    if (!map.TryGetValue(currentManualGroup, out headerGroup))
+                    {
+                        headerGroup = new RuleGuideGroup(currentManualGroup);
+                        map[currentManualGroup] = headerGroup;
+                        manualOrder.Add(headerGroup);
+                    }
+
                     continue;
+                }
 
                 string prefab = ExtractRulePrefabKey(row);
-                string groupName = GetRuleGuideGroupName(categoryKey, prefab);
+
+
+
+
+                string groupName = hasManualHudHeaders && !string.IsNullOrWhiteSpace(currentManualGroup)
+                    ? currentManualGroup
+                    : GetRuleGuideGroupName(categoryKey, prefab);
+
+                if (string.IsNullOrWhiteSpace(groupName))
+                    groupName = "Outros";
 
                 RuleGuideGroup group;
                 if (!map.TryGetValue(groupName, out group))
                 {
                     group = new RuleGuideGroup(groupName);
                     map[groupName] = group;
+                    manualOrder.Add(group);
                 }
 
                 group.Rows.Add(row);
             }
+
+            if (hasManualHudHeaders)
+                return manualOrder.Where(g => g.Rows != null && g.Rows.Count > 0).ToList();
 
             string[] order = GetRuleGuideGroupOrder(categoryKey);
 
@@ -2622,10 +2692,16 @@ namespace Glitnir.Ranking
         {
             bool enabled = _rules != null && _rules.PointsExchangeEnabled;
             int points = data != null ? Mathf.Max(0, data.Points) : 0;
+            bool usePointsPerCoin = _rules != null && _rules.PointsExchangeUsePointsPerCoin;
+            bool useCoinsPerPoint = _rules != null && _rules.PointsExchangeUseCoinsPerPoint;
+            int pointsPerCoin = _rules != null ? Mathf.Max(1, _rules.PointsExchangePointsPerCoin) : 100;
             int coinsPerPoint = _rules != null ? Mathf.Max(1, _rules.PointsExchangeCoinsPerPoint) : 1;
             int maxPoints = _rules != null ? Mathf.Max(0, _rules.PointsExchangeMaxPointsPerRequest) : 0;
             string prefabName = _rules != null && !string.IsNullOrWhiteSpace(_rules.PointsExchangePrefab) ? _rules.PointsExchangePrefab : "Coins";
             int maxSelectablePoints = maxPoints > 0 ? Mathf.Min(points, maxPoints) : points;
+
+            if (usePointsPerCoin)
+                maxSelectablePoints = (maxSelectablePoints / pointsPerCoin) * pointsPerCoin;
 
             if (string.IsNullOrWhiteSpace(_pointsExchangeAmountInput) && maxSelectablePoints > 0)
                 _pointsExchangeAmountInput = maxSelectablePoints.ToString();
@@ -2633,7 +2709,18 @@ namespace Glitnir.Ranking
             int requestedPoints = 0;
             int.TryParse((_pointsExchangeAmountInput ?? "").Trim(), out requestedPoints);
             requestedPoints = Mathf.Clamp(requestedPoints, 0, Mathf.Max(0, maxSelectablePoints));
-            int coins = Mathf.Max(0, requestedPoints * coinsPerPoint);
+
+            int coins = 0;
+            int chargedPoints = requestedPoints;
+            if (usePointsPerCoin)
+            {
+                coins = Mathf.Max(0, requestedPoints / pointsPerCoin);
+                chargedPoints = coins * pointsPerCoin;
+            }
+            else if (useCoinsPerPoint)
+            {
+                coins = Mathf.Max(0, requestedPoints * coinsPerPoint);
+            }
 
             float leftX = rect.x + 12f;
             float rightW = 144f;
@@ -2652,16 +2739,21 @@ namespace Glitnir.Ranking
 
             if (enabled)
             {
+                string modeLine = usePointsPerCoin
+                    ? ("Taxa: " + pointsPerCoin + " pontos = 1 " + prefabName)
+                    : (useCoinsPerPoint ? ("Taxa: 1 ponto = " + coinsPerPoint + " " + prefabName) : "Nenhum modo de câmbio ativo.");
+
                 DrawShadowLabel(new Rect(leftX, rect.y + 44f, rect.width - 24f, 18f), "Máximo por troca: " + maxSelectablePoints + " pontos", _mutedBodyStyle);
-                DrawShadowLabel(new Rect(leftX, rect.y + 64f, rect.width - 24f, 18f), "Recebe: " + coins + " " + prefabName, _mutedBodyStyle);
+                DrawShadowLabel(new Rect(leftX, rect.y + 64f, rect.width - 24f, 18f), modeLine, _mutedBodyStyle);
+                DrawShadowLabel(new Rect(leftX, rect.y + 82f, rect.width - 24f, 18f), "Gasta: " + chargedPoints + " pontos  •  Recebe: " + coins + " " + prefabName, _mutedBodyStyle);
             }
 
-            Rect inputLabelRect = new Rect(leftX, rect.y + 92f, 52f, 18f);
-            Rect inputRect = new Rect(inputLabelRect.xMax + 6f, rect.y + 86f, inputW, 30f);
-            Rect allButtonRect = new Rect(inputRect.xMax + gap, rect.y + 86f, maxButtonW, 30f);
+            Rect inputLabelRect = new Rect(leftX, rect.y + 104f, 52f, 18f);
+            Rect inputRect = new Rect(inputLabelRect.xMax + 6f, rect.y + 98f, inputW, 30f);
+            Rect allButtonRect = new Rect(inputRect.xMax + gap, rect.y + 98f, maxButtonW, 30f);
 
 
-            Rect exchangeButtonRect = new Rect(rightX, rect.y + 124f, rightW, 30f);
+            Rect exchangeButtonRect = new Rect(rightX, rect.y + 126f, rightW, 30f);
 
             DrawShadowLabel(inputLabelRect, "Pontos:", _mutedBodyStyle);
 
@@ -2681,7 +2773,7 @@ namespace Glitnir.Ranking
                 GUI.backgroundColor = new Color(0.78f, 0.55f, 0.18f, 1f);
 
                 if (GUI.Button(exchangeButtonRect, "Trocar"))
-                    RequestPointsExchangeFromServer(requestedPoints);
+                    RequestPointsExchangeFromServer(chargedPoints);
 
                 GUI.backgroundColor = previousBackgroundColor;
             }
