@@ -89,14 +89,14 @@ namespace Glitnir.Ranking
                 if (bytes == null || bytes.Length == 0)
                 {
                     Logger.LogWarning("[Glitnir Ranking] HUD Unity não encontrado nos recursos embutidos da DLL.");
-                    return false;
+                    return CreateRuntimeUnityRankingHud();
                 }
 
                 _unityHudBundle = AssetBundle.LoadFromMemory(bytes);
                 if (_unityHudBundle == null)
                 {
                     Logger.LogWarning("[Glitnir Ranking] AssetBundle do HUD Unity não pôde ser carregado.");
-                    return false;
+                    return CreateRuntimeUnityRankingHud();
                 }
 
                 string assetName = _unityHudBundle.GetAllAssetNames()
@@ -106,14 +106,14 @@ namespace Glitnir.Ranking
                 if (string.IsNullOrWhiteSpace(assetName))
                 {
                     Logger.LogWarning("[Glitnir Ranking] AssetBundle do HUD Unity não contém prefab.");
-                    return false;
+                    return CreateRuntimeUnityRankingHud();
                 }
 
                 GameObject prefab = _unityHudBundle.LoadAsset<GameObject>(assetName);
                 if (prefab == null)
                 {
                     Logger.LogWarning("[Glitnir Ranking] Prefab do HUD Unity não pôde ser carregado: " + assetName);
-                    return false;
+                    return CreateRuntimeUnityRankingHud();
                 }
 
                 _unityHudCanvas = Instantiate(prefab);
@@ -136,7 +136,7 @@ namespace Glitnir.Ranking
             catch (Exception ex)
             {
                 Logger.LogWarning("[Glitnir Ranking] Falha ao carregar HUD Unity: " + ex.Message);
-                return false;
+                return CreateRuntimeUnityRankingHud();
             }
         }
 

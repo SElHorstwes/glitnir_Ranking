@@ -45,6 +45,7 @@
     <Compile Include="Glitnir Ranking.cs" />
     <Compile Include="GlitnirRankingUI\RankingHud.cs" />
     <Compile Include="GlitnirRankingUI\RankingHudUnity.cs" />
+    <Compile Include="GlitnirRankingUI\RankingHudUnityRuntime.cs" />
     <Compile Include="GlitnirRankingUI\RankingLeaderboard.cs" />
     <Compile Include="GlitnirRankingUI\RankingNotifications.cs" />
     <Compile Include="Networking\RankingRewardRpc.cs" />
