@@ -18,6 +18,7 @@ namespace Glitnir.Ranking
         private bool _unityHudLoadAttempted;
         private bool _unityHudAvailable;
         private bool _unityHudButtonsBound;
+        private bool _unityHudTickLogged;
         private float _unityHudNextRefresh;
         private int _unityHudTabIndex;
 
@@ -25,6 +26,12 @@ namespace Glitnir.Ranking
         {
             if (Application.isBatchMode)
                 return;
+
+            if (!_unityHudTickLogged)
+            {
+                _unityHudTickLogged = true;
+                Logger.LogWarning("[Glitnir Ranking] HUD Unity tick ativo no cliente.");
+            }
 
             if (!EnsureUnityRankingHudLoaded())
                 return;

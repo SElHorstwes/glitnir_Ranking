@@ -268,6 +268,7 @@ namespace Glitnir.Ranking
         private string _uiAccentFontNames = "Cinzel|Palatino Linotype|Georgia|Arial";
         private bool _uiUseSystemFonts = false;
         private KeyCode _uiToggleKey = KeyCode.Y;
+        private bool _clientUpdateDiagnosticLogged;
         private float _uiIconZoom = 0.96f;
         private Font _uiTitleFont;
         private Font _uiBodyFont;
@@ -411,6 +412,7 @@ namespace Glitnir.Ranking
         {
             Instance = this;
             Log = Logger;
+            Logger.LogWarning("[Glitnir Ranking] Awake executado. HUD Unity build ativo. BatchMode=" + Application.isBatchMode);
 
 
             _rulesFilePath = Config.ConfigFilePath;
@@ -516,7 +518,16 @@ namespace Glitnir.Ranking
 
             bool rankingTogglePressed = (_uiToggleKey != KeyCode.None && Input.GetKeyDown(_uiToggleKey)) || Input.GetKeyDown(KeyCode.Y);
             if (rankingTogglePressed)
+            {
+                Logger.LogWarning("[Glitnir Ranking] Atalho do ranking pressionado. Tecla configurada=" + _uiToggleKey);
                 ToggleRankingHud();
+            }
+
+            if (!_clientUpdateDiagnosticLogged)
+            {
+                _clientUpdateDiagnosticLogged = true;
+                Logger.LogWarning("[Glitnir Ranking] Update cliente ativo. Tecla configurada=" + _uiToggleKey);
+            }
 
             TickUnityRankingHud();
 
