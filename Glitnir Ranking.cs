@@ -25,7 +25,7 @@ namespace Glitnir.Ranking
     {
         public const string ModGuid = "com.glitnir.ranking";
         public const string ModName = "Glitnir Ranking";
-        public const string ModVersion = "0.7.71";
+        public const string ModVersion = "0.7.72";
 
         internal static GlitnirRankingPlugin Instance;
         internal static ManualLogSource Log;
