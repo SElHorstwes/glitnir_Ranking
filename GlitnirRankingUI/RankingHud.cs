@@ -190,9 +190,16 @@ namespace Glitnir.Ranking
             EnsureUiTexturesLoaded();
             EnsureGuiStyles();
             DrawRankingIcon();
+            HandleUnityHudKeyboard();
 
             if (_hudVisible)
             {
+                if (TryShowUnityRankingHud())
+                {
+                    UpdateRankingInputBlockerRect();
+                    return;
+                }
+
                 ClampRankingWindowRect();
 
                 float openAnim = Mathf.Clamp01((Time.realtimeSinceStartup - _hudOpenTime) * 4.0f);
@@ -372,6 +379,7 @@ namespace Glitnir.Ranking
         private void CloseRankingHudAndCollapseAll()
         {
             _hudVisible = false;
+            HideUnityRankingHud();
             GUI.FocusControl(null);
             SetRankingInputBlockerVisible(false);
             CollapseAllHudSections();

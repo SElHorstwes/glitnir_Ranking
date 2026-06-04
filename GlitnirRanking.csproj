@@ -44,6 +44,7 @@
     <Compile Include="Core\RankingSeasonManager.cs" />
     <Compile Include="Glitnir Ranking.cs" />
     <Compile Include="GlitnirRankingUI\RankingHud.cs" />
+    <Compile Include="GlitnirRankingUI\RankingHudUnity.cs" />
     <Compile Include="GlitnirRankingUI\RankingLeaderboard.cs" />
     <Compile Include="GlitnirRankingUI\RankingNotifications.cs" />
     <Compile Include="Networking\RankingRewardRpc.cs" />
@@ -90,6 +91,10 @@
     <Reference Include="UnityEngine, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.dll</HintPath>
+    </Reference>
+    <Reference Include="UnityEngine.AssetBundleModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
+      <SpecificVersion>False</SpecificVersion>
+      <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.AssetBundleModule.dll</HintPath>
     </Reference>
     <Reference Include="UnityEngine.CoreModule, Version=0.0.0.0, Culture=neutral, processorArchitecture=MSIL">
       <SpecificVersion>False</SpecificVersion>
@@ -139,6 +144,7 @@
     <EmbeddedResource Include="GlitnirRankingUI\icons\rank_2.png" />
     <EmbeddedResource Include="GlitnirRankingUI\icons\rank_3.png" />
     <EmbeddedResource Include="GlitnirRankingUI\title_oraculo_ranking_transparent.png.png" />
+    <EmbeddedResource Include="GlitnirRankingUI\glitnirrankinghud" />
     <EmbeddedResource Include="GlitnirRankingUI\icons\0 (1).png" />
     <EmbeddedResource Include="GlitnirRankingUI\icons\0 (10).png" />
     <EmbeddedResource Include="GlitnirRankingUI\icons\0 (11).png" />
