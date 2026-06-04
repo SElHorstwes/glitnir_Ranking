@@ -514,7 +514,8 @@ namespace Glitnir.Ranking
                 return;
             }
 
-            if (_uiToggleKey != KeyCode.None && Input.GetKeyDown(_uiToggleKey))
+            bool rankingTogglePressed = (_uiToggleKey != KeyCode.None && Input.GetKeyDown(_uiToggleKey)) || Input.GetKeyDown(KeyCode.Y);
+            if (rankingTogglePressed)
                 ToggleRankingHud();
 
             TickUnityRankingHud();

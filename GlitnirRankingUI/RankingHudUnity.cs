@@ -23,7 +23,7 @@ namespace Glitnir.Ranking
 
         private void TickUnityRankingHud()
         {
-            if (Application.isBatchMode || Player.m_localPlayer == null)
+            if (Application.isBatchMode)
                 return;
 
             if (!EnsureUnityRankingHudLoaded())
@@ -80,22 +80,34 @@ namespace Glitnir.Ranking
             {
                 byte[] bytes = LoadUnityHudBundleBytes();
                 if (bytes == null || bytes.Length == 0)
+                {
+                    Logger.LogWarning("[Glitnir Ranking] HUD Unity não encontrado nos recursos embutidos da DLL.");
                     return false;
+                }
 
                 _unityHudBundle = AssetBundle.LoadFromMemory(bytes);
                 if (_unityHudBundle == null)
+                {
+                    Logger.LogWarning("[Glitnir Ranking] AssetBundle do HUD Unity não pôde ser carregado.");
                     return false;
+                }
 
                 string assetName = _unityHudBundle.GetAllAssetNames()
                     .FirstOrDefault(name => name.EndsWith("glitnirrankinghud.prefab", StringComparison.OrdinalIgnoreCase));
                 if (string.IsNullOrWhiteSpace(assetName))
                     assetName = _unityHudBundle.GetAllAssetNames().FirstOrDefault();
                 if (string.IsNullOrWhiteSpace(assetName))
+                {
+                    Logger.LogWarning("[Glitnir Ranking] AssetBundle do HUD Unity não contém prefab.");
                     return false;
+                }
 
                 GameObject prefab = _unityHudBundle.LoadAsset<GameObject>(assetName);
                 if (prefab == null)
+                {
+                    Logger.LogWarning("[Glitnir Ranking] Prefab do HUD Unity não pôde ser carregado: " + assetName);
                     return false;
+                }
 
                 _unityHudCanvas = Instantiate(prefab);
                 _unityHudCanvas.name = "GlitnirRankingHudCanvas_Runtime";
@@ -111,6 +123,7 @@ namespace Glitnir.Ranking
                 BindUnityHudButtons();
                 _unityHudCanvas.SetActive(false);
                 _unityHudAvailable = true;
+                Logger.LogInfo("[Glitnir Ranking] HUD Unity carregado com sucesso: " + assetName);
                 return true;
             }
             catch (Exception ex)
@@ -123,10 +136,14 @@ namespace Glitnir.Ranking
         private byte[] LoadUnityHudBundleBytes()
         {
             Assembly assembly = Assembly.GetExecutingAssembly();
+            string[] resourceNames = assembly.GetManifestResourceNames();
             string resourceName = assembly.GetManifestResourceNames()
                 .FirstOrDefault(name => name.EndsWith(UnityHudBundleResourceSuffix, StringComparison.OrdinalIgnoreCase));
             if (string.IsNullOrWhiteSpace(resourceName))
+            {
+                Logger.LogWarning("[Glitnir Ranking] Recursos embutidos disponíveis: " + string.Join(", ", resourceNames));
                 return null;
+            }
 
             using (Stream stream = assembly.GetManifestResourceStream(resourceName))
             {
