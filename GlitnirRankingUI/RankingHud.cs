@@ -332,7 +332,15 @@ namespace Glitnir.Ranking
             _clientRefreshTimer = ClientRefreshInterval;
             _hudOpenTime = Time.realtimeSinceStartup;
             _hudTabSwitchTime = Time.realtimeSinceStartup;
-            RequestSnapshotFromServer();
+            TickUnityRankingHud();
+            try
+            {
+                RequestSnapshotFromServer();
+            }
+            catch (Exception ex)
+            {
+                Logger.LogWarning("[Glitnir Ranking] Falha ao solicitar snapshot do ranking: " + ex.Message);
+            }
         }
 
         private void CloseRankingHudAndCollapseAll()

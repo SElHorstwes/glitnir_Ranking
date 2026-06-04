@@ -25,7 +25,7 @@ namespace Glitnir.Ranking
     {
         public const string ModGuid = "com.glitnir.ranking";
         public const string ModName = "Glitnir Ranking";
-        public const string ModVersion = "0.7.66";
+        public const string ModVersion = "0.7.67";
 
         internal static GlitnirRankingPlugin Instance;
         internal static ManualLogSource Log;
@@ -516,13 +516,6 @@ namespace Glitnir.Ranking
                 return;
             }
 
-            bool rankingTogglePressed = (_uiToggleKey != KeyCode.None && Input.GetKeyDown(_uiToggleKey)) || Input.GetKeyDown(KeyCode.Y);
-            if (rankingTogglePressed)
-            {
-                Logger.LogWarning("[Glitnir Ranking] Atalho do ranking pressionado. Tecla configurada=" + _uiToggleKey);
-                ToggleRankingHud();
-            }
-
             if (!_clientUpdateDiagnosticLogged)
             {
                 _clientUpdateDiagnosticLogged = true;
@@ -530,6 +523,21 @@ namespace Glitnir.Ranking
             }
 
             TickUnityRankingHud();
+
+            bool rankingTogglePressed = (_uiToggleKey != KeyCode.None && Input.GetKeyDown(_uiToggleKey)) || Input.GetKeyDown(KeyCode.Y);
+            if (rankingTogglePressed)
+            {
+                Logger.LogWarning("[Glitnir Ranking] Atalho do ranking pressionado. Tecla configurada=" + _uiToggleKey);
+                try
+                {
+                    ToggleRankingHud();
+                    Logger.LogWarning("[Glitnir Ranking] Toggle do ranking concluido. HudVisible=" + _hudVisible);
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning("[Glitnir Ranking] Falha no toggle do ranking: " + ex);
+                }
+            }
 
             if (_hudVisible)
             {
