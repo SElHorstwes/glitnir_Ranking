@@ -21,6 +21,30 @@ namespace Glitnir.Ranking
         private float _unityHudNextRefresh;
         private int _unityHudTabIndex;
 
+        private void TickUnityRankingHud()
+        {
+            if (Application.isBatchMode || Player.m_localPlayer == null)
+                return;
+
+            if (!EnsureUnityRankingHudLoaded())
+                return;
+
+            if (_unityHudCanvas != null && !_unityHudCanvas.activeSelf)
+                _unityHudCanvas.SetActive(true);
+
+            SetUnityViewActive("MainPanel", _hudVisible);
+            SetUnityViewActive("CollapsedBadge", !_hudVisible);
+
+            if (_hudVisible)
+            {
+                Cursor.visible = true;
+                if (Cursor.lockState != CursorLockMode.None)
+                    Cursor.lockState = CursorLockMode.None;
+                HandleUnityHudKeyboard();
+                UpdateUnityRankingHud();
+            }
+        }
+
         private bool TryShowUnityRankingHud()
         {
             if (Application.isBatchMode)
@@ -76,6 +100,12 @@ namespace Glitnir.Ranking
                 _unityHudCanvas = Instantiate(prefab);
                 _unityHudCanvas.name = "GlitnirRankingHudCanvas_Runtime";
                 DontDestroyOnLoad(_unityHudCanvas);
+                Canvas canvas = _unityHudCanvas.GetComponent<Canvas>();
+                if (canvas != null)
+                {
+                    canvas.overrideSorting = true;
+                    canvas.sortingOrder = 32740;
+                }
                 RemoveNestedEventSystems(_unityHudCanvas.transform);
                 CacheUnityHudTransforms(_unityHudCanvas.transform);
                 BindUnityHudButtons();
@@ -138,6 +168,7 @@ namespace Glitnir.Ranking
                 return;
 
             EnsureUnityHudEventSystem();
+            BindUnityButton("CollapsedBadge", ToggleRankingHud);
             BindUnityButton("CloseButton", CloseRankingHudAndCollapseAll);
             BindUnityButton("TabLeaderboard", delegate { SetUnityHudTab(0); });
             BindUnityButton("TabPerformance", delegate { SetUnityHudTab(1); });

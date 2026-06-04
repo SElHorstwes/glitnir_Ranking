@@ -129,54 +129,10 @@
       <HintPath>C:\Program Files (x86)\Steam\steamapps\common\Valheim\valheim_Data\Managed\UnityEngine.UIModule.dll</HintPath>
     </Reference>
   </ItemGroup>
+  <ItemGroup></ItemGroup>
+  <ItemGroup></ItemGroup>
   <ItemGroup>
-    <EmbeddedResource Include="GlitnirRankingUI\guiaHonra.png" />
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="GlitnirRankingUI\background_epic_forest_transparent.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\ranking_icon.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\title_ranking_glitnir_transparent.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\title_seu_desempenho_transparent.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\title_top_glitnir_transparent.png" />
-  </ItemGroup>
-  <ItemGroup>
-    <EmbeddedResource Include="GlitnirRankingUI\icons\rank_1.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\rank_2.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\rank_3.png" />
-    <EmbeddedResource Include="GlitnirRankingUI\title_oraculo_ranking_transparent.png.png" />
     <EmbeddedResource Include="GlitnirRankingUI\glitnirrankinghud" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (1).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (10).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (11).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (12).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (13).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (14).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (15).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (16).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (17).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (18).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (19).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (2).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (20).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (21).png" />
-    <Content Include="GlitnirRankingUI\icons\0 (22).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (23).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (24).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (25).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (26).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (27).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (28).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (29).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (3).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (30).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (31).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (32).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (4).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (5).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (6).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (7).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (8).png" />
-    <EmbeddedResource Include="GlitnirRankingUI\icons\0 (9).png" />
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -185,7 +141,7 @@
   <Import Project="packages\ILRepack.Lib.MSBuild.Task.2.0.18\build\ILRepack.Lib.MSBuild.Task.targets" Condition="Exists('packages\ILRepack.Lib.MSBuild.Task.2.0.18\build\ILRepack.Lib.MSBuild.Task.targets')" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">
     <PropertyGroup>
-      <ErrorText>Este projeto faz referÃƒÂªncia a pacotes do NuGet que nÃƒÂ£o estÃƒÂ£o presentes neste computador. Use a RestauraÃƒÂ§ÃƒÂ£o de Pacotes do NuGet para baixÃƒÂ¡-los.  Para obter mais informaÃƒÂ§ÃƒÂµes, consulte http://go.microsoft.com/fwlink/?LinkID=322105. O arquivo ausente ÃƒÂ© {0}.</ErrorText>
+      <ErrorText>Este projeto faz referÃƒÆ’Ã‚Âªncia a pacotes do NuGet que nÃƒÆ’Ã‚Â£o estÃƒÆ’Ã‚Â£o presentes neste computador. Use a RestauraÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Â£o de Pacotes do NuGet para baixÃƒÆ’Ã‚Â¡-los.  Para obter mais informaÃƒÆ’Ã‚Â§ÃƒÆ’Ã‚Âµes, consulte http://go.microsoft.com/fwlink/?LinkID=322105. O arquivo ausente ÃƒÆ’Ã‚Â© {0}.</ErrorText>
     </PropertyGroup>
     <Error Condition="!Exists('packages\ILRepack.Lib.MSBuild.Task.2.0.18\build\ILRepack.Lib.MSBuild.Task.targets')" Text="$([System.String]::Format('$(ErrorText)', 'packages\ILRepack.Lib.MSBuild.Task.2.0.18\build\ILRepack.Lib.MSBuild.Task.targets'))" />
   </Target>

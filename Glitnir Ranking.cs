@@ -273,27 +273,26 @@ namespace Glitnir.Ranking
         private Font _uiBodyFont;
         private Font _uiAccentFont;
 
-        private Texture2D _uiTransparentTexture;
-        private Texture2D _uiWhiteTexture;
-        private Texture2D _uiPanelTexture;
-        private Texture2D _uiBackgroundTexture;
-        private Texture2D _uiRankingIconTexture;
-        private Texture2D _uiTitleRankingTexture;
-        private Texture2D _uiTitleTopTexture;
-        private Texture2D _uiTitleGuideTexture;
-        private Texture2D _uiTitlePlayerTexture;
-        private Texture2D _uiTitleActionsTexture;
+        private Texture2D _uiTransparentTexture = null;
+        private Texture2D _uiWhiteTexture = null;
+        private Texture2D _uiPanelTexture = null;
+        private Texture2D _uiBackgroundTexture = null;
+        private Texture2D _uiRankingIconTexture = null;
+        private Texture2D _uiTitleRankingTexture = null;
+        private Texture2D _uiTitleTopTexture = null;
+        private Texture2D _uiTitleGuideTexture = null;
+        private Texture2D _uiTitlePlayerTexture = null;
+        private Texture2D _uiTitleActionsTexture = null;
 
 
         private readonly Dictionary<string, Texture2D> _uiRuleCategoryIcons = new Dictionary<string, Texture2D>(StringComparer.OrdinalIgnoreCase);
         private const float RuleCategoryIconSize = 24f;
 
 
-        private Texture2D _uiRank1IconTexture;
-        private Texture2D _uiRank2IconTexture;
-        private Texture2D _uiRank3IconTexture;
+        private Texture2D _uiRank1IconTexture = null;
+        private Texture2D _uiRank2IconTexture = null;
+        private Texture2D _uiRank3IconTexture = null;
 
-        private bool _uiTexturesLoaded;
         private readonly HashSet<string> _missingUiTextureWarnings = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         private sealed class SnapshotTopEntryData
@@ -517,6 +516,8 @@ namespace Glitnir.Ranking
 
             if (_uiToggleKey != KeyCode.None && Input.GetKeyDown(_uiToggleKey))
                 ToggleRankingHud();
+
+            TickUnityRankingHud();
 
             if (_hudVisible)
             {
@@ -1229,29 +1230,6 @@ namespace Glitnir.Ranking
 
         private void EnsureUiTexturesLoaded()
         {
-            if (_uiTexturesLoaded)
-                return;
-
-            _uiTransparentTexture = CreateSolidTexture(new Color(0f, 0f, 0f, 0f));
-            _uiWhiteTexture = CreateSolidTexture(new Color(1f, 1f, 1f, 1f));
-            _uiPanelTexture = CreateSolidTexture(new Color(0.05f, 0.04f, 0.03f, 0.72f));
-
-            _uiBackgroundTexture = LoadTextureFromUiFolder("background_epic_forest_transparent.png");
-            _uiRankingIconTexture = LoadTextureFromUiFolder("ranking_icon.png");
-            _uiTitleRankingTexture = LoadTextureFromUiFolder("title_ranking_glitnir_transparent.png");
-            _uiTitleTopTexture = LoadTextureFromUiFolder("topRanking.png", "title_top_glitnir_transparent.png", "title_top_glitnir.png", "title_top_ranking.png");
-            _uiTitleGuideTexture = LoadTextureFromUiFolder("guiaHonra.png", "guideHonor.png", "title_guia_honra_transparent.png", "title_guia_de_honra_transparent.png", "title_guide_honor.png");
-            _uiTitlePlayerTexture = LoadTextureFromUiFolder("title_seu_desempenho_transparent.png");
-            _uiTitleActionsTexture = LoadTextureFromUiFolder("title_oraculo_ranking_transparent.png", "title_oraculo_do_ranking_transparent.png", "oraculo_ranking.png", "oraculo_do_ranking.png");
-
-
-            _uiRank1IconTexture = LoadTextureFromUiFolder("icon/rank_1.png", "icons/rank_1.png", "rank_1.png");
-            _uiRank2IconTexture = LoadTextureFromUiFolder("icon/rank_2.png", "icons/rank_2.png", "rank_2.png");
-            _uiRank3IconTexture = LoadTextureFromUiFolder("icon/rank_3.png", "icons/rank_3.png", "rank_3.png");
-
-            LoadRuleCategoryIcons();
-
-            _uiTexturesLoaded = true;
         }
 
         private void LoadRuleCategoryIcons()

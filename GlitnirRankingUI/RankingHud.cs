@@ -184,47 +184,6 @@ namespace Glitnir.Ranking
 
         private void OnGUI()
         {
-            if (Application.isBatchMode || Player.m_localPlayer == null)
-                return;
-
-            EnsureUiTexturesLoaded();
-            EnsureGuiStyles();
-            DrawRankingIcon();
-            HandleUnityHudKeyboard();
-
-            if (_hudVisible)
-            {
-                if (TryShowUnityRankingHud())
-                {
-                    UpdateRankingInputBlockerRect();
-                    return;
-                }
-
-                ClampRankingWindowRect();
-
-                float openAnim = Mathf.Clamp01((Time.realtimeSinceStartup - _hudOpenTime) * 4.0f);
-                float slideOffset = (1f - openAnim) * 26f;
-
-                Rect animatedRect = _windowRect;
-                animatedRect.y += slideOffset;
-
-                Color previousColor = GUI.color;
-                GUI.color = new Color(previousColor.r, previousColor.g, previousColor.b, previousColor.a * openAnim);
-
-                Rect returnedRect = GUI.Window(918273, animatedRect, DrawRankingWindow, "", _windowStyle);
-
-                GUI.color = previousColor;
-
-
-                _windowRect = returnedRect;
-                _windowRect.y -= slideOffset;
-
-                ClampRankingWindowRect();
-
-                UpdateRankingInputBlockerRect();
-
-                ConsumeRankingMouseEventIfNeeded();
-            }
         }
 
 
