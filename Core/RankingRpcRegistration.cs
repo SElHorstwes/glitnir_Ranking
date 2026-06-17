@@ -18,7 +18,6 @@
 
             routedRpc.Register<ZPackage>(RpcRequestSnapshot, RPC_RequestSnapshot);
             routedRpc.Register<ZPackage>(RpcReceiveSnapshot, RPC_ReceiveSnapshot);
-            routedRpc.Register<ZPackage>(RpcReportHit, RPC_ReportHit);
             routedRpc.Register<ZPackage>(RpcReportKill, RPC_ReportKill);
             routedRpc.Register<ZPackage>(RpcReportSkillGain, RPC_ReportSkillGain);
             routedRpc.Register<ZPackage>(RpcRequestRewardClaim, RPC_RequestRewardClaim);

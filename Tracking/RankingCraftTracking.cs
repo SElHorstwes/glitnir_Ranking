@@ -284,7 +284,7 @@ namespace Glitnir.Ranking
                     entry.TotalCraftPontuadas = Mathf.Clamp(entry.TotalCraftPontuadas + amount, 0, int.MaxValue);
                     entry.CraftPointsTotal = Mathf.Clamp(entry.CraftPointsTotal + pointsToGrant, -int.MaxValue, int.MaxValue);
                     IncrementProgressCounter(entry, "Craft", prefabName, amount);
-                    SaveDatabase();
+                    SaveRankingEntry(entry);
                 }
 
                 JackpotRule uniqueRule = null;

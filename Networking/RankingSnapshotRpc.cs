@@ -58,7 +58,7 @@ namespace Glitnir.Ranking
                 {
                     _requestedInitialServerSnapshot = true;
                     _clientRefreshTimer = 0f;
-                    RequestSnapshotFromServer();
+                    RequestSnapshotFromServer(true);
                 }
             }
             catch (Exception ex)
@@ -72,10 +72,13 @@ namespace Glitnir.Ranking
             return GetRankingSnapshotFromCache();
         }
 
-        private void RequestSnapshotFromServer()
+        private void RequestSnapshotFromServer(bool force = false)
         {
             try
             {
+                if (!force && Time.unscaledTime - _lastSnapshotRequestTime < ClientRefreshInterval)
+                    return;
+
                 if (IsServerInstance())
                 {
                     long serverPeerForClient = GetServerPeerUid();
@@ -95,6 +98,7 @@ namespace Glitnir.Ranking
                         _cachedPlayerText = playerText;
                         CacheSnapshotData(topEntries, playerData);
                         SetStatus("Snapshot local atualizado.", 2f);
+                        _lastSnapshotRequestTime = Time.unscaledTime;
                         return;
                     }
                 }
@@ -109,6 +113,7 @@ namespace Glitnir.Ranking
                 ZPackage pkg = new ZPackage();
                 pkg.Write(GetLocalPlayerName());
                 ZRoutedRpc.instance.InvokeRoutedRPC(serverUid, RpcRequestSnapshot, pkg);
+                _lastSnapshotRequestTime = Time.unscaledTime;
             }
             catch (Exception ex)
             {
@@ -160,6 +165,9 @@ namespace Glitnir.Ranking
                 _cachedPlayerText = pkg.ReadString();
                 ReadSnapshotPayload(pkg);
                 SetStatus("Ranking sincronizado.", 1f);
+                _unityHudNextRefresh = 0f;
+                if (IsUnityRankingHudVisible())
+                    UpdateUnityRankingHud();
             }
             catch (Exception ex)
             {

@@ -48,7 +48,8 @@ namespace Glitnir.Ranking
                 return;
             }
 
-            Dictionary<string, int> oldRanks = IsServerInstance()
+            bool shouldCheckTop3Webhook = IsDiscordTop3WebhookEnabled();
+            Dictionary<string, int> oldRanks = IsServerInstance() && shouldCheckTop3Webhook
                 ? GetRankingSnapshot()
                 : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
@@ -57,7 +58,7 @@ namespace Glitnir.Ranking
             entry.LastUpdateUtc = DateTime.UtcNow.ToString("O");
             RegisterRankingEntry(entry);
 
-            Dictionary<string, int> newRanks = IsServerInstance()
+            Dictionary<string, int> newRanks = IsServerInstance() && shouldCheckTop3Webhook
                 ? GetRankingSnapshot()
                 : new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
 
@@ -66,9 +67,20 @@ namespace Glitnir.Ranking
 
             if (IsServerInstance())
             {
-                TrySendTop3DiscordWebhooks(oldRanks, newRanks, entry.LastReason);
-                SaveDatabase();
+                if (shouldCheckTop3Webhook)
+                    TrySendTop3DiscordWebhooks(oldRanks, newRanks, entry.LastReason);
+
+                SaveRankingEntry(entry);
             }
+        }
+
+        private bool IsDiscordTop3WebhookEnabled()
+        {
+            return IsServerInstance()
+                && _cfgDiscordTop3WebhookEnabled != null
+                && _cfgDiscordTop3WebhookEnabled.Value
+                && _cfgDiscordTop3WebhookUrl != null
+                && !string.IsNullOrWhiteSpace(_cfgDiscordTop3WebhookUrl.Value);
         }
 
         private void TrySendTop3DiscordWebhooks(Dictionary<string, int> oldRanks, Dictionary<string, int> newRanks, string reason)

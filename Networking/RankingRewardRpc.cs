@@ -96,6 +96,7 @@ namespace Glitnir.Ranking
                 ZRoutedRpc.instance.InvokeRoutedRPC(serverUid, RpcRequestPointsExchange, pkg);
 
                 _pointsExchangeRequestPending = true;
+                _unityHudExchangePendingSince = Time.realtimeSinceStartup;
                 SetStatus("Solicitando câmbio de " + requestedPoints + " pontos por moedas...", 2f);
             }
             catch (Exception ex)
@@ -209,7 +210,7 @@ namespace Glitnir.Ranking
                 }
 
                 ReserveRewardClaim(cycleId, playerName, actualRank);
-                SaveDatabase();
+                SaveRewardClaim(cycleId, playerName, actualRank);
                 _pendingRewardClaims.Add(pendingKey);
 
                 ZPackage response = new ZPackage();
@@ -283,7 +284,7 @@ namespace Glitnir.Ranking
                 if (string.IsNullOrWhiteSpace(playerName))
                 {
                     ClearPendingRewardClaim(cycleId, playerName, rank);
-                    SaveDatabase();
+                    DeleteRewardClaim(cycleId, playerName, rank);
                     SendRewardClaimFeedback(sender, false, "Não foi possível confirmar o jogador.");
                     return;
                 }
@@ -291,7 +292,7 @@ namespace Glitnir.Ranking
                 if (!success)
                 {
                     ClearPendingRewardClaim(cycleId, playerName, rank);
-                    SaveDatabase();
+                    DeleteRewardClaim(cycleId, playerName, rank);
                     SendRewardClaimFeedback(sender, false, string.IsNullOrWhiteSpace(message) ? "Falha ao adicionar item no inventário." : message);
                     return;
                 }
@@ -303,7 +304,7 @@ namespace Glitnir.Ranking
                 }
 
                 MarkRewardClaimed(cycleId, playerName, rank);
-                SaveDatabase();
+                SaveRewardClaim(cycleId, playerName, rank);
                 SendRewardClaimFeedback(sender, true, string.IsNullOrWhiteSpace(message) ? "Recompensa adicionada ao inventário." : message);
             }
             catch (Exception ex)
@@ -508,7 +509,11 @@ namespace Glitnir.Ranking
                     return;
                 }
 
-                int coinsReceived = Mathf.Max(1, pointsToExchange * Mathf.Max(1, _rules != null ? _rules.PointsExchangeCoinsPerPoint : 1));
+                int coinsReceived = 0;
+                if (_rules != null && _rules.PointsExchangeUsePointsPerCoin)
+                    coinsReceived = pointsToExchange / Mathf.Max(1, _rules.PointsExchangePointsPerCoin);
+                else
+                    coinsReceived = Mathf.Max(1, pointsToExchange * Mathf.Max(1, _rules != null ? _rules.PointsExchangeCoinsPerPoint : 1));
 
                 entry.Points = Mathf.Max(0, entry.Points - pointsToExchange);
                 entry.TotalPointsExchanges = Mathf.Clamp(entry.TotalPointsExchanges + 1, 0, int.MaxValue);
@@ -516,7 +521,7 @@ namespace Glitnir.Ranking
                 entry.PointsExchangeCoinsTotal = Mathf.Clamp(entry.PointsExchangeCoinsTotal + coinsReceived, 0, int.MaxValue);
                 entry.LastReason = "Câmbio de pontos: -" + pointsToExchange + " pts, +" + coinsReceived + " moedas";
                 entry.LastUpdateUtc = DateTime.UtcNow.ToString("o");
-                SaveDatabase();
+                SaveRankingEntry(entry);
 
                 SendPointsExchangeFeedback(sender, true, string.IsNullOrWhiteSpace(message) ? "Câmbio concluído." : message);
             }
@@ -538,6 +543,9 @@ namespace Glitnir.Ranking
                 string message = SafeLimit(pkg.ReadString(), 128);
 
                 _pointsExchangeRequestPending = false;
+                _unityHudExchangePendingSince = 0f;
+                _unityHudExchangePoints = 0;
+                _unityHudNextRefresh = 0f;
 
                 SetStatus(string.IsNullOrWhiteSpace(message)
                     ? (success ? "Câmbio concluído." : "Câmbio não concluído.")

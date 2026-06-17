@@ -187,6 +187,13 @@ namespace Glitnir.Ranking
             if (Application.isBatchMode)
                 return;
 
+            if (Player.m_localPlayer == null)
+            {
+                if (_hudVisible)
+                    CloseRankingHudAndCollapseAll();
+                return;
+            }
+
             EnsureUiTexturesLoaded();
             EnsureGuiStyles();
             ClampRankingWindowRect();
@@ -305,6 +312,9 @@ namespace Glitnir.Ranking
             if (Application.isBatchMode)
                 return false;
 
+            if (IsUnityRankingHudVisible())
+                return true;
+
             Vector2 mouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
 
             if (_hudVisible && _windowRect.Contains(mouse))
@@ -320,6 +330,9 @@ namespace Glitnir.Ranking
         {
             if (Application.isBatchMode || !_hudVisible)
                 return false;
+
+            if (IsUnityRankingHudVisible())
+                return true;
 
             Vector2 mouse = new Vector2(Input.mousePosition.x, Screen.height - Input.mousePosition.y);
             return _windowRect.Contains(mouse);
@@ -343,6 +356,12 @@ namespace Glitnir.Ranking
 
         private void ToggleRankingHud()
         {
+            if (Player.m_localPlayer == null)
+            {
+                CloseRankingHudAndCollapseAll();
+                return;
+            }
+
             if (TryToggleInventoryRanking())
                 return;
 
@@ -359,7 +378,7 @@ namespace Glitnir.Ranking
             TickUnityRankingHud();
             try
             {
-                RequestSnapshotFromServer();
+                RequestSnapshotFromServer(true);
             }
             catch (Exception ex)
             {
@@ -1062,7 +1081,7 @@ namespace Glitnir.Ranking
             Rect pointsRect = new Rect(rect.xMax - pointsW, rect.y, pointsW, rect.height);
 
             string amountText = string.IsNullOrWhiteSpace(amount) ? "0" : amount.Trim();
-            string leftText = $"<color=#FFFFFF>{label}</color>  {ColorizeActionAmount(label, amountText)}";
+            string leftText = "<color=#FFFFFF>" + label + "</color>  " + ColorizeActionAmount(label, amountText);
 
             DrawShadowLabel(leftRect, leftText, leftStyle);
             DrawShadowLabel(pointsRect, FormatSignedPointsColored(points), pointsStyle);
@@ -2870,31 +2889,6 @@ namespace Glitnir.Ranking
             }
         }
 
-        private Font TryCreateFont(string preferredNames, int size)
-        {
-            if (string.IsNullOrWhiteSpace(preferredNames))
-                return null;
-
-            try
-            {
-                string[] names = preferredNames
-                    .Split(new char[] { '|', ',', ';' }, StringSplitOptions.RemoveEmptyEntries)
-                    .Select(x => x.Trim())
-                    .Where(x => !string.IsNullOrWhiteSpace(x))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToArray();
-
-                if (names.Length == 0)
-                    return null;
-
-                return Font.CreateDynamicFontFromOSFont(names, Mathf.Max(10, size));
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
         private void ApplyFont(GUIStyle style, Font font)
         {
             if (style != null && font != null)
@@ -2909,9 +2903,9 @@ namespace Glitnir.Ranking
             if (_uiTransparentTexture == null)
                 _uiTransparentTexture = CreateSolidTexture(new Color(0f, 0f, 0f, 0f));
 
-            _uiTitleFont = _uiUseSystemFonts ? TryCreateFont(_uiTitleFontNames, 26) : null;
-            _uiBodyFont = _uiUseSystemFonts ? TryCreateFont(_uiBodyFontNames, 15) : null;
-            _uiAccentFont = _uiUseSystemFonts ? TryCreateFont(_uiAccentFontNames, 16) : null;
+            _uiTitleFont = null;
+            _uiBodyFont = null;
+            _uiAccentFont = null;
 
             _windowStyle = new GUIStyle(GUI.skin.window);
             _windowStyle.normal.background = _uiTransparentTexture;
@@ -3065,6 +3059,31 @@ namespace Glitnir.Ranking
             _iconButtonStyle.margin = new RectOffset(0, 0, 0, 0);
 
             _stylesReady = true;
+        }
+    }
+
+    [HarmonyPatch(typeof(PlayerController), "TakeInput")]
+    internal static class GlitnirRankingPlayerControllerInputPatch
+    {
+        private static bool Prefix(ref bool __result)
+        {
+            if (GlitnirRankingPlugin.Instance != null && GlitnirRankingPlugin.Instance.ShouldRankingBlockGameInput())
+            {
+                __result = false;
+                return false;
+            }
+
+            return true;
+        }
+    }
+
+    [HarmonyPatch(typeof(TextInput), "IsVisible")]
+    internal static class GlitnirRankingTextInputVisiblePatch
+    {
+        private static void Postfix(ref bool __result)
+        {
+            if (GlitnirRankingPlugin.Instance != null && GlitnirRankingPlugin.Instance.ShouldRankingBlockGameInput())
+                __result = true;
         }
     }
 }

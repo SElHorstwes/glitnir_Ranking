@@ -25,14 +25,13 @@ namespace Glitnir.Ranking
     {
         public const string ModGuid = "com.glitnir.ranking";
         public const string ModName = "Glitnir Ranking";
-        public const string ModVersion = "0.7.72";
+        public const string ModVersion = "0.7.81";
 
         internal static GlitnirRankingPlugin Instance;
         internal static ManualLogSource Log;
 
         private const string RpcRequestSnapshot = "glitnir.ranking.requestsnapshot";
         private const string RpcReceiveSnapshot = "glitnir.ranking.receivesnapshot";
-        private const string RpcReportHit = "glitnir.ranking.reporthit";
         private const string RpcReportKill = "glitnir.ranking.reportkill";
         private const string RpcReportSkillGain = "glitnir.ranking.reportskillgain";
         private const string RpcRequestRewardClaim = "glitnir.ranking.requestrewardclaim";
@@ -52,14 +51,15 @@ namespace Glitnir.Ranking
 
         private const float DamageCreditLifetimeSeconds = 180f;
         private const float ProcessedKillLifetimeSeconds = 180f;
+        private const float ProcessedKillCleanupIntervalSeconds = 15f;
         private const float LocalRecentHitLifetimeSeconds = 15f;
-        private const float ServerPendingKillDelaySeconds = 0.25f;
-        private const float ServerPendingKillTimeoutSeconds = 12f;
-        private const float ServerPendingKillCheckInterval = 0.25f;
+        private const float AdminIdentifierRefreshIntervalSeconds = 30f;
+        private const float ExplorationReportIntervalSeconds = 180f;
+        private const double DatabaseSaveIntervalSeconds = 30d;
         private const int MaxHudChars = 3000;
         private const int MaxPlayerNameLength = 32;
         private const int MaxReasonLength = 64;
-        private const float ClientRefreshInterval = 1f;
+        private const float ClientRefreshInterval = 300f;
 
 
         private readonly Dictionary<string, string> _hudPrefabDisplayNameCache =
@@ -76,11 +76,15 @@ namespace Glitnir.Ranking
         private PropertyInfo _hudLocalizationInstanceProperty;
         private MethodInfo _hudLocalizationLocalizeMethod;
         private bool _hudLocalizationReflectionReady;
+        private FieldInfo _minimapExploredField;
 
         private Harmony _harmony;
         private bool _rpcsRegistered = false;
         private ZRoutedRpc _registeredRoutedRpcInstance;
         private readonly object _databaseSaveLock = new object();
+        private bool _databaseSavePending;
+        private DateTime _nextDatabaseSaveUtc = DateTime.MinValue;
+        private float _nextProcessedKillCleanupAt;
 
         private string _rulesFilePath;
         private string _uiFolderPath;
@@ -90,6 +94,8 @@ namespace Glitnir.Ranking
 
         private ConfigFile _rulesConfig;
         private FileSystemWatcher _rulesConfigWatcher;
+        private ConfigEntry<bool> _cfgLockConfiguration;
+        private bool _rulesConfigEventsBound;
         private bool _rulesConfigReloadQueued;
         private float _rulesConfigReloadAt;
         private float _rulesConfigApplyAt;
@@ -188,10 +194,9 @@ namespace Glitnir.Ranking
         private readonly Dictionary<string, float> _localRecentHits =
             new Dictionary<string, float>(StringComparer.Ordinal);
 
-        private readonly Dictionary<string, PendingKillCheck> _pendingKillChecks =
-            new Dictionary<string, PendingKillCheck>(StringComparer.Ordinal);
-
-        private float _serverPendingKillCheckAt;
+        private HashSet<string> _cachedAdminIdentifiers = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private float _nextAdminIdentifierRefreshAt;
+        private bool _adminIdentifiersCacheReady;
 
         private bool _hudVisible;
         private float _hudOpenTime;
@@ -216,6 +221,7 @@ namespace Glitnir.Ranking
         private readonly HashSet<string> _expandedPerformanceCategories = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private bool _performanceCategoriesInitialized;
         private float _clientRefreshTimer;
+        private float _lastSnapshotRequestTime = -9999f;
         private float _explorationReportTimer;
         private float _lastReportedMapExplorePercent = -1f;
         private long _lastKnownServerPeerUid;
@@ -263,12 +269,7 @@ namespace Glitnir.Ranking
         private GUIStyle _configStyle;
         private bool _stylesReady;
 
-        private string _uiTitleFontNames = "Cinzel Decorative|Cinzel|Trajan Pro|Palatino Linotype|Georgia|Times New Roman";
-        private string _uiBodyFontNames = "Cormorant Garamond|Cormorant SC|Palatino Linotype|Georgia|Garamond|Arial";
-        private string _uiAccentFontNames = "Cinzel|Palatino Linotype|Georgia|Arial";
-        private bool _uiUseSystemFonts = false;
         private KeyCode _uiToggleKey = KeyCode.Y;
-        private bool _clientUpdateDiagnosticLogged;
         private float _uiIconZoom = 0.96f;
         private Font _uiTitleFont;
         private Font _uiBodyFont;
@@ -392,13 +393,6 @@ namespace Glitnir.Ranking
         }
 
 
-        private sealed class PendingKillCheck
-        {
-            public string PrefabName = "";
-            public float FirstSeenTime;
-            public float LastHitTime;
-        }
-
         private sealed class RankRewardInfo
         {
             public int Rank;
@@ -412,7 +406,6 @@ namespace Glitnir.Ranking
         {
             Instance = this;
             Log = Logger;
-            Logger.LogWarning("[Glitnir Ranking] Awake executado. HUD Unity build ativo. BatchMode=" + Application.isBatchMode);
 
 
             _rulesFilePath = Config.ConfigFilePath;
@@ -476,7 +469,7 @@ namespace Glitnir.Ranking
             try
             {
                 if (IsDedicatedServerInstance())
-                    SaveDatabase();
+                    SaveDatabase(true);
 
                 try
                 {
@@ -510,16 +503,9 @@ namespace Glitnir.Ranking
 
             if (Application.isBatchMode)
             {
-                CleanupOldDamageCredits();
                 CleanupOldProcessedKills();
-                ProcessPendingKillChecks();
+                FlushPendingDatabaseSaveIfDue();
                 return;
-            }
-
-            if (!_clientUpdateDiagnosticLogged)
-            {
-                _clientUpdateDiagnosticLogged = true;
-                Logger.LogWarning("[Glitnir Ranking] Update cliente ativo. Tecla configurada=" + _uiToggleKey);
             }
 
             TickUnityRankingHud();
@@ -527,11 +513,9 @@ namespace Glitnir.Ranking
             bool rankingTogglePressed = (_uiToggleKey != KeyCode.None && Input.GetKeyDown(_uiToggleKey)) || Input.GetKeyDown(KeyCode.Y);
             if (rankingTogglePressed)
             {
-                Logger.LogWarning("[Glitnir Ranking] Atalho do ranking pressionado. Tecla configurada=" + _uiToggleKey);
                 try
                 {
                     ToggleRankingHud();
-                    Logger.LogWarning("[Glitnir Ranking] Toggle do ranking concluido. HudVisible=" + _hudVisible);
                 }
                 catch (Exception ex)
                 {
@@ -563,9 +547,8 @@ namespace Glitnir.Ranking
 
             if (IsServerInstance())
             {
-                CleanupOldDamageCredits();
                 CleanupOldProcessedKills();
-                ProcessPendingKillChecks();
+                FlushPendingDatabaseSaveIfDue();
             }
         }
         private bool IsServerInstance()
@@ -749,15 +732,18 @@ namespace Glitnir.Ranking
             if (HasMarketplaceQuestCredit(playerName, questKey))
                 return;
 
-            _database.MarketplaceQuestCredits.Add(new MarketplaceQuestCreditRecord
+            MarketplaceQuestCreditRecord credit = new MarketplaceQuestCreditRecord
             {
                 PlayerName = SanitizePlayerName(playerName),
                 QuestKey = SafeMarketplaceQuestKey(questKey),
                 GrantedAtUtc = DateTime.UtcNow.ToString("O")
-            });
+            };
+
+            _database.MarketplaceQuestCredits.Add(credit);
+            RebuildDatabaseIndexes();
 
             if (IsServerInstance())
-                SaveDatabase();
+                SaveMarketplaceQuestCredit(credit);
         }
 
 
@@ -772,7 +758,7 @@ namespace Glitnir.Ranking
                     return;
 
                 _explorationReportTimer += Time.unscaledDeltaTime;
-                if (_explorationReportTimer < 15f)
+                if (_explorationReportTimer < ExplorationReportIntervalSeconds)
                     return;
 
                 _explorationReportTimer = 0f;
@@ -811,11 +797,13 @@ namespace Glitnir.Ranking
                 if (minimap == null)
                     return -1;
 
-                FieldInfo exploredField = AccessTools.Field(typeof(Minimap), "m_explored");
-                if (exploredField == null)
+                if (_minimapExploredField == null)
+                    _minimapExploredField = AccessTools.Field(typeof(Minimap), "m_explored");
+
+                if (_minimapExploredField == null)
                     return -1f;
 
-                bool[] explored = exploredField.GetValue(minimap) as bool[];
+                bool[] explored = _minimapExploredField.GetValue(minimap) as bool[];
                 if (explored == null || explored.Length == 0)
                     return -1f;
 
@@ -924,7 +912,7 @@ namespace Glitnir.Ranking
                     entry.ExplorationMapJackpotPointsTotal = Mathf.Clamp(entry.ExplorationMapJackpotPointsTotal + points, 0, int.MaxValue);
                 }
 
-                SaveDatabase();
+                SaveRankingEntry(entry);
             }
             catch (Exception ex)
             {
@@ -969,30 +957,6 @@ namespace Glitnir.Ranking
                     "HudShortcutKey",
                     _uiToggleKey,
                     "Tecla para abrir/fechar o HUD. Use nomes do Unity KeyCode, ex.: F, G, Alpha1, None.").Value;
-
-                _uiUseSystemFonts = Config.Bind(
-                    "UI",
-                    "UseSystemFonts",
-                    _uiUseSystemFonts,
-                    "Ative apenas se o cliente renderizar bem fontes instaladas no sistema.").Value;
-
-                _uiTitleFontNames = Config.Bind(
-                    "UI",
-                    "TitleFontNames",
-                    _uiTitleFontNames,
-                    "Fontes opcionais para titulos, separadas por |.").Value;
-
-                _uiBodyFontNames = Config.Bind(
-                    "UI",
-                    "BodyFontNames",
-                    _uiBodyFontNames,
-                    "Fontes opcionais para texto, separadas por |.").Value;
-
-                _uiAccentFontNames = Config.Bind(
-                    "UI",
-                    "AccentFontNames",
-                    _uiAccentFontNames,
-                    "Fontes opcionais para detalhes/acento, separadas por |.").Value;
 
                 _iconRect.x = Config.Bind("UI", "IconX", _iconRect.x, "Posição X do botão do ranking.").Value;
                 _iconRect.y = Config.Bind("UI", "IconY", _iconRect.y, "Posição Y do botão do ranking.").Value;
@@ -1261,6 +1225,93 @@ namespace Glitnir.Ranking
 
             if (_uiBackgroundTexture == null)
                 _uiBackgroundTexture = CreateSolidTexture(new Color(0.018f, 0.015f, 0.012f, 0.96f));
+
+            if (_uiRankingIconTexture == null)
+                _uiRankingIconTexture = CreateRankingShortcutIconTexture();
+        }
+
+        private Texture2D CreateRankingShortcutIconTexture()
+        {
+            const int size = 64;
+            Texture2D texture = new Texture2D(size, size, TextureFormat.ARGB32, false);
+            texture.name = "GlitnirRankingShortcutIcon";
+            texture.wrapMode = TextureWrapMode.Clamp;
+            texture.filterMode = FilterMode.Bilinear;
+
+            Color clear = new Color(0f, 0f, 0f, 0f);
+            Color blade = new Color(0.90f, 0.92f, 0.86f, 0.98f);
+            Color edge = new Color(0.20f, 0.14f, 0.09f, 0.95f);
+            Color gold = new Color(1f, 0.62f, 0.16f, 1f);
+
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                    texture.SetPixel(x, y, clear);
+            }
+
+            DrawThickLine(texture, 15, 12, 47, 50, edge, 7);
+            DrawThickLine(texture, 49, 12, 17, 50, edge, 7);
+            DrawThickLine(texture, 15, 12, 47, 50, blade, 4);
+            DrawThickLine(texture, 49, 12, 17, 50, blade, 4);
+            DrawThickLine(texture, 12, 15, 24, 8, gold, 5);
+            DrawThickLine(texture, 52, 15, 40, 8, gold, 5);
+            DrawThickLine(texture, 28, 28, 36, 36, gold, 3);
+            DrawThickLine(texture, 36, 28, 28, 36, gold, 3);
+
+            texture.Apply(false, true);
+            return texture;
+        }
+
+        private void DrawThickLine(Texture2D texture, int x0, int y0, int x1, int y1, Color color, int width)
+        {
+            if (texture == null)
+                return;
+
+            int dx = Math.Abs(x1 - x0);
+            int dy = Math.Abs(y1 - y0);
+            int sx = x0 < x1 ? 1 : -1;
+            int sy = y0 < y1 ? 1 : -1;
+            int err = dx - dy;
+            int half = Mathf.Max(1, width / 2);
+
+            while (true)
+            {
+                FillIconPixel(texture, x0, y0, color, half);
+                if (x0 == x1 && y0 == y1)
+                    break;
+
+                int e2 = err * 2;
+                if (e2 > -dy)
+                {
+                    err -= dy;
+                    x0 += sx;
+                }
+
+                if (e2 < dx)
+                {
+                    err += dx;
+                    y0 += sy;
+                }
+            }
+        }
+
+        private void FillIconPixel(Texture2D texture, int cx, int cy, Color color, int radius)
+        {
+            for (int y = -radius; y <= radius; y++)
+            {
+                for (int x = -radius; x <= radius; x++)
+                {
+                    if ((x * x) + (y * y) > radius * radius)
+                        continue;
+
+                    int px = cx + x;
+                    int py = cy + y;
+                    if (px < 0 || py < 0 || px >= texture.width || py >= texture.height)
+                        continue;
+
+                    texture.SetPixel(px, py, color);
+                }
+            }
         }
 
         private void LoadRuleCategoryIcons()
@@ -1451,7 +1502,7 @@ namespace Glitnir.Ranking
                         entry.DeathPenaltyPointsTotal = Mathf.Clamp(entry.DeathPenaltyPointsTotal + pointsLost, 0, int.MaxValue);
                     }
 
-                    SaveDatabase();
+                    SaveRankingEntry(entry);
                     return;
                 }
 
@@ -1482,7 +1533,7 @@ namespace Glitnir.Ranking
                     }
                 }
 
-                SaveDatabase();
+                SaveRankingEntry(entry);
             }
             catch (Exception ex)
             {
@@ -1536,7 +1587,7 @@ namespace Glitnir.Ranking
             if (current < rule.RequiredAmount)
             {
                 if (IsDedicatedServerInstance())
-                    SaveDatabase();
+                    SaveRankingEntry(entry);
                 return;
             }
 
@@ -1555,7 +1606,7 @@ namespace Glitnir.Ranking
             }
 
             if (IsServerInstance())
-                SaveDatabase();
+                SaveRankingEntry(entry);
         }
 
 
@@ -3369,16 +3420,6 @@ namespace Glitnir.Ranking
     [HarmonyPatch]
     internal static class RankingPatches
     {
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(Character), "ApplyDamage")]
-        private static void Character_ApplyDamage_Postfix(Character __instance, HitData hit)
-        {
-            if (GlitnirRankingPlugin.Instance == null)
-                return;
-
-            GlitnirRankingPlugin.Instance.NotifyLocalDamage(__instance, hit, false);
-        }
-
         [HarmonyPostfix]
         [HarmonyPatch(typeof(Character), "Damage")]
         private static void Character_Damage_Postfix(Character __instance, HitData hit)

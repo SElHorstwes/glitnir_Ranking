@@ -190,16 +190,19 @@ namespace Glitnir.Ranking
             if (HasFishingCatchCredit(zdoKey))
                 return;
 
-            _database.FishingCatchCredits.Add(new FishingCatchCreditRecord
+            FishingCatchCreditRecord credit = new FishingCatchCreditRecord
             {
                 PlayerName = SanitizePlayerName(playerName),
                 FishPrefab = SafeKey(fishPrefab),
                 ZdoKey = SafeKey(zdoKey),
                 GrantedAtUtc = DateTime.UtcNow.ToString("O")
-            });
+            };
+
+            _database.FishingCatchCredits.Add(credit);
+            RebuildDatabaseIndexes();
 
             if (IsServerInstance())
-                SaveDatabase();
+                SaveFishingCatchCredit(credit);
         }
     }
 

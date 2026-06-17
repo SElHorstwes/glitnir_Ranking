@@ -10,6 +10,11 @@ namespace Glitnir.Ranking
 {
     public partial class GlitnirRankingPlugin
     {
+        private LiteDatabase OpenRankingDatabase()
+        {
+            return new LiteDatabase(new ConnectionString { Filename = _databaseFilePath, Connection = ConnectionType.Shared });
+        }
+
         private void LoadDatabase()
         {
             _database = new RankingDatabase();
@@ -30,7 +35,7 @@ namespace Glitnir.Ranking
 
                 EnsureDatabaseDirectoryExists();
 
-                using (LiteDatabase db = new LiteDatabase(new ConnectionString { Filename = _databaseFilePath, Connection = ConnectionType.Shared }))
+                using (LiteDatabase db = OpenRankingDatabase())
                 {
                     ILiteCollection<RankingEntryDocument> entries = db.GetCollection<RankingEntryDocument>("ranking_entries");
                     ILiteCollection<RewardClaimDocument> claims = db.GetCollection<RewardClaimDocument>("reward_claims");
@@ -75,16 +80,6 @@ namespace Glitnir.Ranking
                     _database = NormalizeDatabase(loaded);
 
 
-
-                    if ((_database == null || _database.Entries == null || _database.Entries.Count == 0))
-                    {
-                        RankingDatabase recoveredFromEmpty = TryLoadDatabaseBackup();
-                        if (recoveredFromEmpty != null && recoveredFromEmpty.Entries != null && recoveredFromEmpty.Entries.Count > 0)
-                        {
-                            _database = NormalizeDatabase(recoveredFromEmpty);
-                            Logger.LogWarning("[Ranking] Banco principal estava vazio; backup carregado. Jogadores recuperados: " + _database.Entries.Count);
-                        }
-                    }
 
                     RebuildDatabaseIndexes();
                 }
@@ -428,7 +423,7 @@ namespace Glitnir.Ranking
             return database;
         }
 
-        private void SaveDatabase()
+        private void SaveDatabase(bool force = false)
         {
             lock (_databaseSaveLock)
             {
@@ -440,13 +435,18 @@ namespace Glitnir.Ranking
                     if (string.IsNullOrWhiteSpace(_databaseFilePath) || _database == null)
                         return;
 
+                    _databaseSavePending = true;
+
+                    DateTime now = DateTime.UtcNow;
+                    if (!force && now < _nextDatabaseSaveUtc)
+                        return;
+
                     EnsureDatabaseDirectoryExists();
-                    CreateDatabaseBackupCopy();
 
                     RankingDatabase normalized = NormalizeDatabase(_database);
                     MarkRankingCacheDirty();
 
-                    using (LiteDatabase db = new LiteDatabase(new ConnectionString { Filename = _databaseFilePath, Connection = ConnectionType.Shared }))
+                    using (LiteDatabase db = OpenRankingDatabase())
                     {
                         ILiteCollection<RankingEntryDocument> entries = db.GetCollection<RankingEntryDocument>("ranking_entries");
                         ILiteCollection<RewardClaimDocument> claims = db.GetCollection<RewardClaimDocument>("reward_claims");
@@ -523,12 +523,176 @@ namespace Glitnir.Ranking
 
                     _database = normalized;
                     RebuildDatabaseIndexes();
+                    _databaseSavePending = false;
+                    _nextDatabaseSaveUtc = now.AddSeconds(DatabaseSaveIntervalSeconds);
+
                 }
                 catch (Exception ex)
                 {
                     Logger.LogError("Erro ao salvar banco LiteDB do ranking: " + ex);
                 }
             }
+        }
+
+        private void SaveRankingEntry(RankingEntry entry)
+        {
+            lock (_databaseSaveLock)
+            {
+                try
+                {
+                    if (!IsDedicatedServerInstance())
+                        return;
+
+                    if (string.IsNullOrWhiteSpace(_databaseFilePath) || entry == null)
+                        return;
+
+                    RankingEntryDocument doc = ConvertToDocument(entry);
+                    if (doc == null || string.IsNullOrWhiteSpace(doc.PlayerName))
+                        return;
+
+                    EnsureDatabaseDirectoryExists();
+
+                    using (LiteDatabase db = OpenRankingDatabase())
+                    {
+                        ILiteCollection<RankingEntryDocument> entries = db.GetCollection<RankingEntryDocument>("ranking_entries");
+                        entries.EnsureIndex(x => x.PlayerName, true);
+                        entries.Upsert(doc);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("Erro ao salvar jogador no LiteDB do ranking: " + ex);
+                }
+            }
+        }
+
+        private void SaveMarketplaceQuestCredit(MarketplaceQuestCreditRecord credit)
+        {
+            lock (_databaseSaveLock)
+            {
+                try
+                {
+                    if (!IsDedicatedServerInstance() || string.IsNullOrWhiteSpace(_databaseFilePath) || credit == null)
+                        return;
+
+                    MarketplaceQuestCreditDocument doc = ConvertToDocument(credit);
+                    if (doc == null || string.IsNullOrWhiteSpace(doc.Key))
+                        return;
+
+                    EnsureDatabaseDirectoryExists();
+                    using (LiteDatabase db = OpenRankingDatabase())
+                    {
+                        ILiteCollection<MarketplaceQuestCreditDocument> credits = db.GetCollection<MarketplaceQuestCreditDocument>("marketplace_quest_credits");
+                        credits.EnsureIndex(x => x.Key, true);
+                        credits.Upsert(doc);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("Erro ao salvar credito de quest Marketplace no LiteDB: " + ex);
+                }
+            }
+        }
+
+        private void SaveFishingCatchCredit(FishingCatchCreditRecord credit)
+        {
+            lock (_databaseSaveLock)
+            {
+                try
+                {
+                    if (!IsDedicatedServerInstance() || string.IsNullOrWhiteSpace(_databaseFilePath) || credit == null)
+                        return;
+
+                    FishingCatchCreditDocument doc = ConvertToDocument(credit);
+                    if (doc == null || string.IsNullOrWhiteSpace(doc.ZdoKey))
+                        return;
+
+                    EnsureDatabaseDirectoryExists();
+                    using (LiteDatabase db = OpenRankingDatabase())
+                    {
+                        ILiteCollection<FishingCatchCreditDocument> credits = db.GetCollection<FishingCatchCreditDocument>("fishing_catch_credits");
+                        credits.EnsureIndex(x => x.ZdoKey, true);
+                        credits.Upsert(doc);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("Erro ao salvar credito de pesca no LiteDB: " + ex);
+                }
+            }
+        }
+
+        private void SaveRewardClaim(string cycleId, string playerName, int rank)
+        {
+            lock (_databaseSaveLock)
+            {
+                try
+                {
+                    if (!IsDedicatedServerInstance() || string.IsNullOrWhiteSpace(_databaseFilePath) || _database == null || _database.Claims == null)
+                        return;
+
+                    string key = BuildRewardClaimKey(cycleId, playerName, rank);
+                    RewardClaimRecord claim = _database.Claims.FirstOrDefault(x =>
+                        x != null &&
+                        string.Equals(BuildRewardClaimKey(x.CycleId, x.PlayerName, x.Rank), key, StringComparison.OrdinalIgnoreCase));
+                    if (claim == null)
+                        return;
+
+                    RewardClaimDocument doc = ConvertToDocument(claim);
+                    if (doc == null || string.IsNullOrWhiteSpace(doc.Key))
+                        return;
+
+                    EnsureDatabaseDirectoryExists();
+                    using (LiteDatabase db = OpenRankingDatabase())
+                    {
+                        ILiteCollection<RewardClaimDocument> claims = db.GetCollection<RewardClaimDocument>("reward_claims");
+                        claims.EnsureIndex(x => x.Key, true);
+                        claims.Upsert(doc);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("Erro ao salvar claim de recompensa no LiteDB: " + ex);
+                }
+            }
+        }
+
+        private void DeleteRewardClaim(string cycleId, string playerName, int rank)
+        {
+            lock (_databaseSaveLock)
+            {
+                try
+                {
+                    if (!IsDedicatedServerInstance() || string.IsNullOrWhiteSpace(_databaseFilePath))
+                        return;
+
+                    string key = BuildRewardClaimKey(cycleId, playerName, rank);
+                    if (string.IsNullOrWhiteSpace(key))
+                        return;
+
+                    EnsureDatabaseDirectoryExists();
+                    using (LiteDatabase db = OpenRankingDatabase())
+                    {
+                        ILiteCollection<RewardClaimDocument> claims = db.GetCollection<RewardClaimDocument>("reward_claims");
+                        claims.Delete(key);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError("Erro ao remover claim de recompensa no LiteDB: " + ex);
+                }
+            }
+        }
+
+        private void FlushPendingDatabaseSaveIfDue()
+        {
+            if (!_databaseSavePending)
+                return;
+
+            if (DateTime.UtcNow < _nextDatabaseSaveUtc)
+                return;
+
+            SaveDatabase(true);
         }
 
         private void DeleteStaleRankingDocuments(ILiteCollection<RankingEntryDocument> collection, HashSet<string> validKeys)
@@ -576,95 +740,6 @@ namespace Glitnir.Ranking
 
                 if (string.IsNullOrWhiteSpace(doc.ZdoKey) || !validKeys.Contains(doc.ZdoKey))
                     collection.Delete(doc.ZdoKey);
-            }
-        }
-
-
-        private string GetDatabaseBackupFilePath()
-        {
-            if (string.IsNullOrWhiteSpace(_databaseFilePath))
-                return "";
-
-            return _databaseFilePath + ".bak";
-        }
-
-        private void CreateDatabaseBackupCopy()
-        {
-            try
-            {
-                if (!IsDedicatedServerInstance())
-                    return;
-
-                if (string.IsNullOrWhiteSpace(_databaseFilePath))
-                    return;
-
-                if (!File.Exists(_databaseFilePath))
-                    return;
-
-                string backupPath = GetDatabaseBackupFilePath();
-                if (string.IsNullOrWhiteSpace(backupPath))
-                    return;
-
-                File.Copy(_databaseFilePath, backupPath, true);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning("[Ranking] Nao foi possivel criar backup do banco LiteDB: " + ex.Message);
-            }
-        }
-
-        private RankingDatabase TryLoadDatabaseBackup()
-        {
-            try
-            {
-                string backupPath = GetDatabaseBackupFilePath();
-                if (string.IsNullOrWhiteSpace(backupPath) || !File.Exists(backupPath))
-                    return null;
-
-                using (LiteDatabase db = new LiteDatabase(backupPath))
-                {
-                    RankingDatabase loaded = new RankingDatabase();
-
-                    ILiteCollection<RankingEntryDocument> entries = db.GetCollection<RankingEntryDocument>("ranking_entries");
-                    ILiteCollection<RewardClaimDocument> claims = db.GetCollection<RewardClaimDocument>("reward_claims");
-                    ILiteCollection<MarketplaceQuestCreditDocument> marketplaceCredits = db.GetCollection<MarketplaceQuestCreditDocument>("marketplace_quest_credits");
-                    ILiteCollection<FishingCatchCreditDocument> fishingCredits = db.GetCollection<FishingCatchCreditDocument>("fishing_catch_credits");
-
-                    foreach (RankingEntryDocument doc in entries.FindAll())
-                    {
-                        RankingEntry entry = ConvertFromDocument(doc);
-                        if (entry != null && !string.IsNullOrWhiteSpace(entry.PlayerName))
-                            loaded.Entries.Add(entry);
-                    }
-
-                    foreach (RewardClaimDocument doc in claims.FindAll())
-                    {
-                        RewardClaimRecord claim = ConvertFromDocument(doc);
-                        if (claim != null && !string.IsNullOrWhiteSpace(claim.PlayerName))
-                            loaded.Claims.Add(claim);
-                    }
-
-                    foreach (MarketplaceQuestCreditDocument doc in marketplaceCredits.FindAll())
-                    {
-                        MarketplaceQuestCreditRecord credit = ConvertFromDocument(doc);
-                        if (credit != null && !string.IsNullOrWhiteSpace(credit.PlayerName) && !string.IsNullOrWhiteSpace(credit.QuestKey))
-                            loaded.MarketplaceQuestCredits.Add(credit);
-                    }
-
-                    foreach (FishingCatchCreditDocument doc in fishingCredits.FindAll())
-                    {
-                        FishingCatchCreditRecord credit = ConvertFromDocument(doc);
-                        if (credit != null && !string.IsNullOrWhiteSpace(credit.ZdoKey))
-                            loaded.FishingCatchCredits.Add(credit);
-                    }
-
-                    return NormalizeDatabase(loaded);
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning("[Ranking] Backup do banco tambem falhou: " + ex.Message);
-                return null;
             }
         }
 

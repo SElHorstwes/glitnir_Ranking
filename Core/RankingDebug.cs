@@ -58,7 +58,7 @@ namespace Glitnir.Ranking
                 return;
             }
 
-            Log?.LogInfo($"[{category}] {message}");
+            Log?.LogInfo("[" + category + "] " + message);
         }
     }
 }

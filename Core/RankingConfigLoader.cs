@@ -451,8 +451,10 @@ namespace Glitnir.Ranking
 
                 _rulesConfig = Config;
 
+                _cfgLockConfiguration = _rulesConfig.BindLockingConfig();
 
                 BindSyncedRulesConfigEntries(legacyOverrides);
+                BindRulesConfigEvents();
                 ApplyRulesFromSyncedConfig();
                 _rulesConfig.Save();
 
@@ -513,6 +515,7 @@ namespace Glitnir.Ranking
             {
                 _rulesConfig?.Reload();
                 BindSyncedRulesConfigEntries(null);
+                BindRulesConfigEvents();
                 ApplyRulesFromSyncedConfig();
 
             }
@@ -529,6 +532,32 @@ namespace Glitnir.Ranking
 
             _rulesConfigApplyAt = Time.realtimeSinceStartup + RulesConfigApplyInterval;
             ApplyRulesFromSyncedConfig();
+        }
+
+        private void BindRulesConfigEvents()
+        {
+            if (_rulesConfig == null || _rulesConfigEventsBound)
+                return;
+
+            _rulesConfig.SettingChanged += OnRulesConfigSettingChanged;
+            _rulesConfig.ConfigReloaded += OnRulesConfigReloaded;
+            _rulesConfigEventsBound = true;
+        }
+
+        private void OnRulesConfigSettingChanged(object sender, SettingChangedEventArgs args)
+        {
+            QueueRulesConfigApply();
+        }
+
+        private void OnRulesConfigReloaded(object sender, EventArgs args)
+        {
+            QueueRulesConfigApply();
+        }
+
+        private void QueueRulesConfigApply()
+        {
+            _rulesConfigReloadQueued = false;
+            _rulesConfigApplyAt = Time.realtimeSinceStartup;
         }
 
         private Dictionary<string, string> LoadLegacyRulesOverrides(string filePath)

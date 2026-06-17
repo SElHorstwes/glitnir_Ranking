@@ -169,7 +169,7 @@
   <PropertyGroup>
     <ILRepackOutputFile>$(TargetDir)GlitnirRanking.Merged.dll</ILRepackOutputFile>
   </PropertyGroup>
-  <Target Name="ILRepackMerge" AfterTargets="Build">
+  <Target Name="ILRepackMerge" AfterTargets="Build" Condition="'$(SkipILRepack)' != 'true' And '$(MSBuildRuntimeType)' != 'Core'">
     <ItemGroup>
       <InputAssemblies Include="$(TargetPath)" />
       <InputAssemblies Include="$(TargetDir)LiteDB.dll" />

@@ -131,20 +131,7 @@ namespace Glitnir.Ranking
                 if (string.IsNullOrWhiteSpace(attackerKey))
                     return;
 
-                long serverPeerUid = GetServerPeerUid();
-                if (serverPeerUid == 0L || !_rpcsRegistered || ZRoutedRpc.instance == null)
-                    return;
-
                 _localRecentHits[zdoKey] = Time.time;
-
-                ZPackage hitPkg = new ZPackage();
-                hitPkg.Write(zdoKey);
-                hitPkg.Write(prefabName);
-                hitPkg.Write(attackerKey);
-                hitPkg.Write(IsTamedCharacter(victim));
-                ZRoutedRpc.instance.InvokeRoutedRPC(serverPeerUid, RpcReportHit, hitPkg);
-
-                DebugLog(DebugCategory.Hit, "Cliente reportando HIT: player=" + GetLocalPlayerName() + " attackerKey=" + attackerKey + " zdo=" + zdoKey + " prefab=" + prefabName);
 
                 if (!postDamage)
                     return;
@@ -219,210 +206,6 @@ namespace Glitnir.Ranking
                 return false;
 
             return attackerUserId == sender;
-        }
-
-        private void SchedulePendingKillCheck(string zdoKey, string prefabName)
-        {
-            if (!IsServerInstance())
-                return;
-
-            zdoKey = SafeKey(zdoKey);
-            prefabName = SafeKey(prefabName);
-
-            if (string.IsNullOrWhiteSpace(zdoKey))
-                return;
-
-            PendingKillCheck pending;
-            if (!_pendingKillChecks.TryGetValue(zdoKey, out pending) || pending == null)
-            {
-                pending = new PendingKillCheck();
-                pending.PrefabName = prefabName;
-                pending.FirstSeenTime = Time.time;
-                pending.LastHitTime = Time.time;
-                _pendingKillChecks[zdoKey] = pending;
-                return;
-            }
-
-            pending.LastHitTime = Time.time;
-            if (!string.IsNullOrWhiteSpace(prefabName))
-                pending.PrefabName = prefabName;
-        }
-
-        private bool TryFindCharacterByZdoKey(string zdoKey, out Character found)
-        {
-            found = null;
-
-            if (string.IsNullOrWhiteSpace(zdoKey))
-                return false;
-
-            try
-            {
-                Character[] characters = UnityEngine.Object.FindObjectsByType<Character>(FindObjectsSortMode.None);
-                if (characters == null || characters.Length == 0)
-                    return false;
-
-                for (int i = 0; i < characters.Length; i++)
-                {
-                    Character character = characters[i];
-                    if (character == null || character is Player)
-                        continue;
-
-                    string candidateKey = GetZdoKey(character);
-                    if (string.Equals(candidateKey, zdoKey, StringComparison.Ordinal))
-                    {
-                        found = character;
-                        return true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Logger.LogWarning("[Ranking] Falha ao localizar Character por zdoKey=" + zdoKey + ": " + ex.Message);
-            }
-
-            return false;
-        }
-
-        private void ProcessPendingKillChecks()
-        {
-            if (!IsServerInstance())
-                return;
-
-            if (_pendingKillChecks.Count == 0)
-                return;
-
-            if (Time.time < _serverPendingKillCheckAt)
-                return;
-
-            _serverPendingKillCheckAt = Time.time + ServerPendingKillCheckInterval;
-
-            List<string> toRemove = new List<string>();
-
-            KeyValuePair<string, PendingKillCheck>[] pendingSnapshot = _pendingKillChecks.ToArray();
-
-            foreach (KeyValuePair<string, PendingKillCheck> kvp in pendingSnapshot)
-            {
-                string zdoKey = kvp.Key;
-                PendingKillCheck pending = kvp.Value;
-
-                if (!_pendingKillChecks.ContainsKey(zdoKey))
-                    continue;
-
-                if (pending == null)
-                {
-                    toRemove.Add(zdoKey);
-                    continue;
-                }
-
-                if (_processedKills.ContainsKey(zdoKey))
-                {
-                    toRemove.Add(zdoKey);
-                    continue;
-                }
-
-                if (Time.time - pending.FirstSeenTime > ServerPendingKillTimeoutSeconds)
-                {
-                    DebugLog(DebugCategory.PendingKill, "Pending kill expirado: zdo=" + zdoKey + " prefab=" + pending.PrefabName);
-                    RemoveDamageCredit(zdoKey);
-                    toRemove.Add(zdoKey);
-                    continue;
-                }
-
-                if (Time.time - pending.LastHitTime < ServerPendingKillDelaySeconds)
-                    continue;
-
-                List<string> creditedPlayers = GetCreditedPlayerNames(zdoKey);
-                if (creditedPlayers.Count == 0)
-                {
-                    toRemove.Add(zdoKey);
-                    continue;
-                }
-
-                Character victim;
-                if (TryFindCharacterByZdoKey(zdoKey, out victim))
-                {
-                    if (_rules.IgnoreTamedKills && IsTamedCharacter(victim))
-                    {
-                        MarkTamedKillIgnored(zdoKey, "pending-check");
-                        toRemove.Add(zdoKey);
-                        continue;
-                    }
-
-                    bool isDead = false;
-                    float hp = 1f;
-
-                    try { hp = victim.GetHealth(); } catch { }
-                    try { isDead = victim.IsDead(); } catch { }
-
-                    if (!isDead && hp > 0f)
-                        continue;
-
-                    string prefabName = !string.IsNullOrWhiteSpace(pending.PrefabName)
-                        ? pending.PrefabName
-                        : GetPrefabName(victim.gameObject);
-
-                    DebugLog(DebugCategory.PendingKill, "Pending kill confirmado por estado morto: zdo=" + zdoKey + " prefab=" + prefabName + " credited=" + string.Join(",", creditedPlayers.ToArray()));
-                    ProcessKillReportMulti(creditedPlayers, zdoKey, prefabName, "pending-dead");
-                    toRemove.Add(zdoKey);
-                    continue;
-                }
-
-                DebugLog(DebugCategory.PendingKill, "Pending kill confirmado por alvo ausente: zdo=" + zdoKey + " prefab=" + pending.PrefabName + " credited=" + string.Join(",", creditedPlayers.ToArray()));
-                ProcessKillReportMulti(creditedPlayers, zdoKey, pending.PrefabName, "pending-missing");
-                toRemove.Add(zdoKey);
-            }
-
-            foreach (string key in toRemove.Distinct(StringComparer.Ordinal))
-                _pendingKillChecks.Remove(key);
-        }
-
-        private void RPC_ReportHit(long sender, ZPackage pkg)
-        {
-            try
-            {
-                if (!IsServerInstance() || pkg == null)
-                    return;
-
-                string zdoKey = SafeKey(pkg.ReadString());
-                string prefabName = SafeKey(pkg.ReadString());
-                string attackerKey = SafeKey(pkg.ReadString());
-                bool clientSaysTamed = false;
-                try { clientSaysTamed = pkg.ReadBool(); } catch { }
-                string reporterName = ResolvePlayerNameFromSender(sender);
-
-                DebugLog(DebugCategory.Hit, "Servidor recebeu HIT: sender=" + sender + " reporter=" + reporterName + " attackerKey=" + attackerKey + " zdo=" + zdoKey + " prefab=" + prefabName);
-
-                if (string.IsNullOrWhiteSpace(zdoKey) || string.IsNullOrWhiteSpace(prefabName) || string.IsNullOrWhiteSpace(reporterName))
-                    return;
-
-                if (ShouldIgnoreSenderForRanking(sender, reporterName))
-                {
-                    DebugLog(DebugCategory.Hit, "HIT ignorado para admin: sender=" + sender + " reporter=" + reporterName);
-                    return;
-                }
-
-                if (!DoesSenderMatchAttackerKey(sender, attackerKey))
-                {
-                    DebugLog(DebugCategory.Hit, "HIT rejeitado por mismatch: sender=" + sender + " reporter=" + reporterName + " attackerKey=" + attackerKey);
-                    return;
-                }
-
-                if (_rules.IgnoreTamedKills && clientSaysTamed)
-                {
-                    MarkTamedKillIgnored(zdoKey, "rpc-hit-client-flag");
-                    return;
-                }
-
-                if (ShouldIgnoreTamedKill(zdoKey, "rpc-hit"))
-                    return;
-
-                RecordDamageCredit(zdoKey, reporterName);
-                SchedulePendingKillCheck(zdoKey, prefabName);
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError("Erro no RPC_ReportHit: " + ex);
-            }
         }
 
         private void RPC_ReportKill(long sender, ZPackage pkg)
@@ -600,6 +383,9 @@ namespace Glitnir.Ranking
 
         private HashSet<string> GetAllKnownAdminIdentifiers()
         {
+            if (_adminIdentifiersCacheReady && Time.realtimeSinceStartup < _nextAdminIdentifierRefreshAt)
+                return new HashSet<string>(_cachedAdminIdentifiers, StringComparer.OrdinalIgnoreCase);
+
             HashSet<string> result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             try
@@ -625,6 +411,10 @@ namespace Glitnir.Ranking
                 }
             }
             catch { }
+
+            _cachedAdminIdentifiers = new HashSet<string>(result, StringComparer.OrdinalIgnoreCase);
+            _nextAdminIdentifierRefreshAt = Time.realtimeSinceStartup + AdminIdentifierRefreshIntervalSeconds;
+            _adminIdentifiersCacheReady = true;
 
             return result;
         }
@@ -909,13 +699,6 @@ namespace Glitnir.Ranking
             if (_ignoredTamedKills.ContainsKey(zdoKey))
                 return true;
 
-            Character victim;
-            if (TryFindCharacterByZdoKey(zdoKey, out victim) && IsTamedCharacter(victim))
-            {
-                MarkTamedKillIgnored(zdoKey, source);
-                return true;
-            }
-
             return false;
         }
 
@@ -1097,7 +880,7 @@ namespace Glitnir.Ranking
                         if (!_rules.AllowRepeatedBossPoints && alreadyCreditedBoss)
                         {
                             DebugLog(DebugCategory.Kill, "Boss repetido sem pontos, progresso contado: player=" + playerName + " boss=" + prefabName);
-                            SaveDatabase();
+                            SaveRankingEntry(entry);
                             continue;
                         }
 
@@ -1226,6 +1009,11 @@ namespace Glitnir.Ranking
 
         private void CleanupOldProcessedKills()
         {
+            if (Time.time < _nextProcessedKillCleanupAt)
+                return;
+
+            _nextProcessedKillCleanupAt = Time.time + ProcessedKillCleanupIntervalSeconds;
+
             List<string> toRemove = new List<string>();
             foreach (KeyValuePair<string, float> kvp in _processedKills)
             {
@@ -1253,7 +1041,6 @@ namespace Glitnir.Ranking
                 return;
 
             _damageCredits.Remove(zdoKey);
-            _pendingKillChecks.Remove(zdoKey);
         }
     }
 }
